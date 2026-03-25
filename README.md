@@ -31,6 +31,7 @@ The initial app is a lean deployment target for Hostinger that can become:
 ## Run locally
 
 ```bash
+cd app
 npm start
 ```
 
@@ -48,9 +49,11 @@ This app is designed to be simple enough for Hostinger Node deployment or Hostin
 
 ## Hostinger-ready files
 
-- `HOSTINGER.md` → deployment notes for Hostinger Node Apps
-- `.env.example` → baseline env vars
-- `scripts/smoke-test.sh` → quick verification after deploy
+These live in the `app/` directory because Hostinger should point the Node app at `app` as the application root.
+
+- `app/HOSTINGER.md` → deployment notes for Hostinger Node Apps
+- `app/.env.example` → baseline env vars
+- `app/scripts/smoke-test.sh` → quick verification after deploy
 
 ## Next steps
 
