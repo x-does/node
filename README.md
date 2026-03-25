@@ -46,6 +46,12 @@ Primary intended target:
 
 This app is designed to be simple enough for Hostinger Node deployment or Hostinger MCP-driven JS deployment.
 
+## Hostinger-ready files
+
+- `HOSTINGER.md` → deployment notes for Hostinger Node Apps
+- `.env.example` → baseline env vars
+- `scripts/smoke-test.sh` → quick verification after deploy
+
 ## Next steps
 
 1. add Hostinger MCP deployment metadata/status into the UI
