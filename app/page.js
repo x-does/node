@@ -2,7 +2,7 @@ export default function HomePage() {
   return (
     <main style={{ maxWidth: 960, margin: '0 auto', padding: '64px 24px' }}>
       <div style={{ display: 'inline-block', padding: '8px 12px', borderRadius: 999, border: '1px solid #2a4b73', color: '#6dd3fb', marginBottom: 20 }}>
-        Hostinger framework detection test
+        Hostinger framework detection test · control-check-20260326
       </div>
       <h1 style={{ fontSize: 'clamp(2.2rem, 5vw, 4.6rem)', lineHeight: 1, margin: '0 0 16px' }}>
         node.xdoes.space
