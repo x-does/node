@@ -31,6 +31,8 @@ export async function GET() {
           'Sources with prefixes deploy_probe*, verify_*, internal_*, monitor_* are treated as internal verification traffic and excluded from external.unique.',
         windowsRule:
           'metrics.windows.last60m and metrics.windows.last24h use UTC rolling windows; each window includes windowStartUtc for deterministic interpretation.',
+        freshnessRule:
+          'Use metrics.external.lastEventAt and metrics.windows.{last60m,last24h}.external.lastEventAt to see if fresh external intent exists, independent of internal probes.',
       })
     );
   } catch (error) {
