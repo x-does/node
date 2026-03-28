@@ -1,4 +1,5 @@
 import crypto from 'crypto';
+import { normalizeAuditSource } from '../../../lib/audit-source.js';
 import { insertLeadEvent } from '../../../lib/db.js';
 
 export const dynamic = 'force-dynamic';
@@ -8,23 +9,8 @@ const EVENT_KEY = 'node_audit_20260328';
 const DESTINATION = 'https://t.me/world_fuckery_bot?start=node_audit_20260328';
 const NO_STORE = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0';
 
-function normalizeSource(rawSource) {
-  if (!rawSource) {
-    return 'unknown';
-  }
-
-  const cleaned = rawSource
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '')
-    .slice(0, 64);
-
-  return cleaned || 'unknown';
-}
-
 function parseSource(url) {
-  return normalizeSource(url.searchParams.get('src'));
+  return normalizeAuditSource(url.searchParams.get('src'));
 }
 
 function parseEventKey(url) {
