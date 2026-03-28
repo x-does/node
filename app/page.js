@@ -38,6 +38,7 @@ const priorities = [
 ];
 
 const EVENT_KEY = 'node_audit_20260328';
+const PARITY_MARKER = 'Build the money loop.';
 
 const roadmap = [
   {
@@ -61,6 +62,7 @@ export default async function HomePage() {
     <main style={styles.shell}>
       <section style={styles.hero}>
         <div style={styles.badge}>node.xdoes.space · launchpad</div>
+        <div style={styles.parityMarker} aria-label="root-parity-marker">{PARITY_MARKER}</div>
         <div style={styles.heroGrid}>
           <div>
             <h1 style={styles.h1}>Services, products, and free releases.</h1>
@@ -217,7 +219,15 @@ const styles = {
     color: '#79d7ff',
     fontSize: 13,
     letterSpacing: 0.3,
-    marginBottom: 20,
+    marginBottom: 12,
+  },
+  parityMarker: {
+    display: 'block',
+    marginBottom: 18,
+    color: '#9dd9ff',
+    fontSize: 14,
+    fontWeight: 700,
+    letterSpacing: 0.2,
   },
   heroGrid: {
     display: 'grid',

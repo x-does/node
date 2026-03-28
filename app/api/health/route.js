@@ -1,5 +1,8 @@
 import { getPool } from '../../../lib/db.js';
 
+const EVENT_KEY = 'node_audit_20260328';
+const PARITY_MARKER = 'Build the money loop.';
+
 export async function GET() {
   try {
     const [rows] = await getPool().query('SELECT DATABASE() AS db_name, NOW() AS now_ts');
@@ -9,6 +12,8 @@ export async function GET() {
       framework: 'nextjs',
       database: rows?.[0]?.db_name || null,
       timestamp: rows?.[0]?.now_ts || new Date().toISOString(),
+      parityMarker: PARITY_MARKER,
+      auditEventKey: EVENT_KEY,
     });
   } catch (error) {
     return Response.json(
@@ -16,6 +21,8 @@ export async function GET() {
         ok: false,
         service: 'node.xdoes.space',
         framework: 'nextjs',
+        parityMarker: PARITY_MARKER,
+        auditEventKey: EVENT_KEY,
         error: error instanceof Error ? error.message : 'DB health check failed',
       },
       { status: 500 }
