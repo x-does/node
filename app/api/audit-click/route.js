@@ -1,12 +1,12 @@
 import crypto from 'crypto';
+import { AUDIT_EVENT_KEY, buildAuditTelegramStartUrl } from '../../../lib/audit-config.js';
 import { normalizeAuditSource } from '../../../lib/audit-source.js';
 import { insertLeadEvent } from '../../../lib/db.js';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const EVENT_KEY = 'node_audit_20260328';
-const DESTINATION = 'https://t.me/world_fuckery_bot?start=node_audit_20260328';
+const EVENT_KEY = AUDIT_EVENT_KEY;
 const NO_STORE = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0';
 
 function parseSource(url) {
@@ -18,11 +18,7 @@ function parseEventKey(url) {
 }
 
 function getDestination(eventKey) {
-  if (eventKey === EVENT_KEY) {
-    return DESTINATION;
-  }
-
-  return `https://t.me/world_fuckery_bot?start=${encodeURIComponent(eventKey)}`;
+  return buildAuditTelegramStartUrl(eventKey === EVENT_KEY ? EVENT_KEY : eventKey);
 }
 
 function getClientIp(request) {

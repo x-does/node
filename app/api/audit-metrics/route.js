@@ -1,9 +1,10 @@
+import { AUDIT_EVENT_KEY } from '../../../lib/audit-config.js';
 import { getLeadMetrics } from '../../../lib/db.js';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
-const EVENT_KEY = 'node_audit_20260328';
+const EVENT_KEY = AUDIT_EVENT_KEY;
 const NO_STORE = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0';
 
 function withNoStoreHeaders(response) {

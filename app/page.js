@@ -1,3 +1,4 @@
+import { buildAuditClickHref, AUDIT_EVENT_KEY, ROOT_PARITY_MARKER } from '../lib/audit-config.js';
 import { getPublicStatusCards } from '../lib/db.js';
 
 export const dynamic = 'force-dynamic';
@@ -37,8 +38,8 @@ const priorities = [
   'Keep the messaging focused on what users can get now and what is coming next.',
 ];
 
-const EVENT_KEY = 'node_audit_20260328';
-const PARITY_MARKER = 'Build the money loop.';
+const EVENT_KEY = AUDIT_EVENT_KEY;
+const PARITY_MARKER = ROOT_PARITY_MARKER;
 
 const roadmap = [
   {
@@ -72,7 +73,7 @@ export default async function HomePage() {
             </p>
             <div style={styles.ctaRow}>
               <a style={styles.primaryButton} href="#offerings">See offerings</a>
-              <a style={styles.secondaryButton} href={`/api/audit-click?src=hero_primary&event=${EVENT_KEY}`}>
+              <a style={styles.secondaryButton} href={buildAuditClickHref('hero_primary', EVENT_KEY)}>
                 Request a paid Node Revenue Audit
               </a>
             </div>

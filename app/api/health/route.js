@@ -1,7 +1,8 @@
+import { AUDIT_EVENT_KEY, ROOT_PARITY_MARKER } from '../../../lib/audit-config.js';
 import { getPool } from '../../../lib/db.js';
 
-const EVENT_KEY = 'node_audit_20260328';
-const PARITY_MARKER = 'Build the money loop.';
+const EVENT_KEY = AUDIT_EVENT_KEY;
+const PARITY_MARKER = ROOT_PARITY_MARKER;
 
 export async function GET() {
   try {
