@@ -42,7 +42,7 @@ export async function GET(request) {
     console.error('audit click insert failed', error);
   }
 
-  const response = Response.redirect(DESTINATION, 302);
+  const response = Response.redirect(DESTINATION, 307);
   response.headers.set('Cache-Control', NO_STORE);
   response.headers.set('Pragma', 'no-cache');
   response.headers.set('Expires', '0');
