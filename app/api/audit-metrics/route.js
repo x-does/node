@@ -21,6 +21,7 @@ export async function GET() {
       Response.json({
         ok: true,
         eventKey: EVENT_KEY,
+        generatedAtUtc: new Date().toISOString(),
         metrics,
         trackingRule:
           'Use unique lead clicks from openclaw_lead_events and compare against unique Telegram /start payloads.',
@@ -29,7 +30,7 @@ export async function GET() {
         sourceClassification:
           'Sources with prefixes deploy_probe*, verify_*, internal_*, monitor_* are treated as internal verification traffic and excluded from external.unique.',
         windowsRule:
-          'metrics.windows.last60m and metrics.windows.last24h use UTC rolling windows for faster signal checks without changing qualified-lead criteria.',
+          'metrics.windows.last60m and metrics.windows.last24h use UTC rolling windows; each window includes windowStartUtc for deterministic interpretation.',
       })
     );
   } catch (error) {
