@@ -60,6 +60,12 @@ const nextActions = [
   'Make the cron jobs easier to steer by showing what each loop owns.',
 ];
 
+const auditCta = {
+  href: 'https://t.me/world_fuckery_bot?start=node_audit_20260328',
+  label: 'Request a paid Node Revenue Audit',
+  trackingRule: 'Count unique Telegram /start payloads: node_audit_20260328',
+};
+
 export default async function HomePage() {
   const status = await loadStatus();
 
@@ -76,7 +82,7 @@ export default async function HomePage() {
             </p>
             <div style={styles.ctaRow}>
               <a style={styles.primaryButton} href="#status">View live status</a>
-              <a style={styles.secondaryButton} href="#loops">See the cron loops</a>
+              <a style={styles.secondaryButton} href="#audit">See the paid audit CTA</a>
             </div>
           </div>
 
@@ -124,6 +130,28 @@ export default async function HomePage() {
             </article>
           ))}
         </div>
+      </section>
+
+      <section id="audit" style={styles.section}>
+        <div style={styles.sectionHeader}>
+          <h2 style={styles.h2}>Single paid offer</h2>
+          <p style={styles.muted}>One CTA only until conversion tracking matures.</p>
+        </div>
+
+        <article style={styles.auditCard}>
+          <div style={styles.auditEyebrow}>Revenue path</div>
+          <h3 style={styles.auditTitle}>Node Revenue / Automation Audit</h3>
+          <p style={styles.cardBody}>
+            If you want a focused technical + growth teardown for your Node stack, request a paid
+            audit directly through Telegram.
+          </p>
+          <div style={styles.ctaRow}>
+            <a style={styles.auditButton} href={auditCta.href} target="_blank" rel="noreferrer">
+              {auditCta.label}
+            </a>
+          </div>
+          <p style={styles.trackingNote}>Tracking rule: {auditCta.trackingRule}</p>
+        </article>
       </section>
 
       <section id="status" style={styles.section}>
@@ -400,6 +428,41 @@ const styles = {
     margin: 0,
     color: '#a7b7d6',
     lineHeight: 1.65,
+  },
+  auditCard: {
+    border: '1px solid rgba(144, 111, 255, 0.35)',
+    background: 'linear-gradient(160deg, rgba(35, 20, 75, 0.92), rgba(12, 18, 34, 0.95))',
+    borderRadius: 22,
+    padding: 24,
+    boxShadow: '0 18px 40px rgba(29, 15, 67, 0.45)',
+  },
+  auditEyebrow: {
+    color: '#c2afff',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontSize: 12,
+    marginBottom: 8,
+    fontWeight: 700,
+  },
+  auditTitle: {
+    margin: '0 0 12px',
+    fontSize: '1.4rem',
+  },
+  auditButton: {
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: '12px 18px',
+    borderRadius: 14,
+    background: 'linear-gradient(135deg, #8f6bff, #4f9bff)',
+    color: '#fff',
+    textDecoration: 'none',
+    fontWeight: 800,
+  },
+  trackingNote: {
+    margin: '14px 0 0',
+    color: '#c7d4f0',
+    fontSize: 14,
   },
   errorBox: {
     padding: 18,
