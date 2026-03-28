@@ -61,9 +61,11 @@ const nextActions = [
 ];
 
 const auditCta = {
-  href: 'https://t.me/world_fuckery_bot?start=node_audit_20260328',
+  href: '/api/audit-click?src=homepage_cta',
+  destination: 'https://t.me/world_fuckery_bot?start=node_audit_20260328',
   label: 'Request a paid Node Revenue Audit',
-  trackingRule: 'Count unique Telegram /start payloads: node_audit_20260328',
+  trackingRule:
+    'Count unique click rows in openclaw_lead_events (event_key=node_audit_20260328) plus unique Telegram /start payloads.',
 };
 
 export default async function HomePage() {
@@ -146,11 +148,12 @@ export default async function HomePage() {
             audit directly through Telegram.
           </p>
           <div style={styles.ctaRow}>
-            <a style={styles.auditButton} href={auditCta.href} target="_blank" rel="noreferrer">
+            <a style={styles.auditButton} href={auditCta.href}>
               {auditCta.label}
             </a>
           </div>
           <p style={styles.trackingNote}>Tracking rule: {auditCta.trackingRule}</p>
+          <p style={styles.trackingNote}>Destination: {auditCta.destination}</p>
         </article>
       </section>
 
