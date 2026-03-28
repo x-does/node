@@ -1,8 +1,12 @@
 import crypto from 'crypto';
 import { insertLeadEvent } from '../../../lib/db.js';
 
+export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+
 const EVENT_KEY = 'node_audit_20260328';
 const DESTINATION = 'https://t.me/world_fuckery_bot?start=node_audit_20260328';
+const NO_STORE = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0';
 
 function getClientIp(request) {
   const forwarded = request.headers.get('x-forwarded-for');
@@ -38,5 +42,9 @@ export async function GET(request) {
     console.error('audit click insert failed', error);
   }
 
-  return Response.redirect(DESTINATION, 302);
+  const response = Response.redirect(DESTINATION, 302);
+  response.headers.set('Cache-Control', NO_STORE);
+  response.headers.set('Pragma', 'no-cache');
+  response.headers.set('Expires', '0');
+  return response;
 }
