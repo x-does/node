@@ -14,15 +14,50 @@ function withNoStoreHeaders(response) {
   return response;
 }
 
+function minutesSince(isoTimestamp, nowMs) {
+  if (!isoTimestamp) {
+    return null;
+  }
+
+  const ts = Date.parse(isoTimestamp);
+  if (Number.isNaN(ts)) {
+    return null;
+  }
+
+  return Math.max(0, Math.floor((nowMs - ts) / 60000));
+}
+
 export async function GET() {
   try {
     const metrics = await getLeadMetrics(EVENT_KEY);
+    const generatedAt = new Date();
+    const generatedAtUtc = generatedAt.toISOString();
+    const nowMs = generatedAt.getTime();
+
+    const signal = {
+      hasExternalIntentLast60m: metrics.windows?.last60m?.external?.unique > 0,
+      hasExternalIntentLast24h: metrics.windows?.last24h?.external?.unique > 0,
+      externalMinutesSinceLastEvent: minutesSince(metrics.external?.lastEventAt, nowMs),
+      internalMinutesSinceLastEvent: minutesSince(metrics.internal?.lastEventAt, nowMs),
+      windows: {
+        last60m: {
+          externalMinutesSinceLastEvent: minutesSince(metrics.windows?.last60m?.external?.lastEventAt, nowMs),
+          internalMinutesSinceLastEvent: minutesSince(metrics.windows?.last60m?.internal?.lastEventAt, nowMs),
+        },
+        last24h: {
+          externalMinutesSinceLastEvent: minutesSince(metrics.windows?.last24h?.external?.lastEventAt, nowMs),
+          internalMinutesSinceLastEvent: minutesSince(metrics.windows?.last24h?.internal?.lastEventAt, nowMs),
+        },
+      },
+    };
+
     return withNoStoreHeaders(
       Response.json({
         ok: true,
         eventKey: EVENT_KEY,
-        generatedAtUtc: new Date().toISOString(),
+        generatedAtUtc,
         metrics,
+        signal,
         trackingRule:
           'Use unique lead clicks from openclaw_lead_events and compare against unique Telegram /start payloads.',
         qualificationRule:
@@ -33,6 +68,8 @@ export async function GET() {
           'metrics.windows.last60m and metrics.windows.last24h use UTC rolling windows; each window includes windowStartUtc for deterministic interpretation.',
         freshnessRule:
           'Use metrics.external.lastEventAt and metrics.windows.{last60m,last24h}.external.lastEventAt to see if fresh external intent exists, independent of internal probes.',
+        signalRule:
+          'signal.* gives decision-ready booleans and minute deltas from generatedAtUtc; treat hasExternalIntentLast60m=false as no fresh external click intent in the last hour.',
       })
     );
   } catch (error) {
