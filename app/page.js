@@ -37,6 +37,8 @@ const priorities = [
   'Keep the messaging focused on what users can get now and what is coming next.',
 ];
 
+const EVENT_KEY = 'node_audit_20260328';
+
 const roadmap = [
   {
     label: 'Now',
@@ -68,7 +70,9 @@ export default async function HomePage() {
             </p>
             <div style={styles.ctaRow}>
               <a style={styles.primaryButton} href="#offerings">See offerings</a>
-              <a style={styles.secondaryButton} href="#status">View live status</a>
+              <a style={styles.secondaryButton} href={`/api/audit-click?src=hero_primary&event=${EVENT_KEY}`}>
+                Request a paid Node Revenue Audit
+              </a>
             </div>
           </div>
 
