@@ -25,6 +25,8 @@ export async function GET() {
           'Use unique lead clicks from openclaw_lead_events and compare against unique Telegram /start payloads.',
         qualificationRule:
           'Treat only unique Telegram /start payload conversations with a concrete revenue/automation problem as qualified leads.',
+        sourceClassification:
+          'Sources with prefixes deploy_probe*, verify_*, internal_*, monitor_* are treated as internal verification traffic and excluded from external.unique.',
       })
     );
   } catch (error) {
