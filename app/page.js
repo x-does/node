@@ -15,58 +15,42 @@ async function loadStatus() {
   }
 }
 
-const pillars = [
+const offerings = [
   {
-    title: 'Build products that earn',
-    body: 'Ship small, useful web products that can show traction fast and turn into recurring revenue.',
+    title: 'Services',
+    body: 'Fast, practical web work: landing pages, proof-of-concept builds, automation, and public dashboards that make progress visible.',
   },
   {
-    title: 'Make the loop self-sustaining',
-    body: 'Use cron, agents, and shared ops files to keep strategy, build, growth, and finance in sync.',
+    title: 'Products',
+    body: 'Small tools and reusable web products designed to ship quickly, learn quickly, and evolve into something people actually pay for.',
   },
   {
-    title: 'Prove value on the live site',
-    body: 'Surface real status, actions, and proof on node.xdoes.space so the product is not just a shell.',
-  },
-];
-
-const loops = [
-  {
-    name: 'CEO',
-    cadence: 'Every 2 hours',
-    role: 'Set priorities, choose the bottleneck, assign work.',
-  },
-  {
-    name: 'CTO',
-    cadence: 'Every 1 hour',
-    role: 'Ship the best technical slice and verify it live.',
-  },
-  {
-    name: 'CFO',
-    cadence: 'Every 6 hours',
-    role: 'Find revenue, pricing, affiliate, and partnership moves.',
-  },
-  {
-    name: 'CMO',
-    cadence: 'Every 4 hours',
-    role: 'Run distribution, content, and growth experiments.',
+    title: 'Free releases',
+    body: 'Useful utilities, templates, and open experiments that build trust, attract users, and create a path to future paid offers.',
   },
 ];
 
-const nextActions = [
-  'Use the homepage as the command center for the node product.',
-  'Show public DB-backed proof without exposing secrets.',
-  'Keep the current product goal visible: self-sustenance and money.',
-  'Make the cron jobs easier to steer by showing what each loop owns.',
+const priorities = [
+  'Make the site public-first and easy to understand in a few seconds.',
+  'Show live proof when available, but never expose secrets or internal-only links.',
+  'Turn the page into a launchpad for services, products, and free releases.',
+  'Keep the messaging focused on what users can get now and what is coming next.',
 ];
 
-const auditCta = {
-  href: '/api/audit-click?src=homepage_cta',
-  destination: 'https://t.me/world_fuckery_bot?start=node_audit_20260328',
-  label: 'Request a paid Node Revenue Audit',
-  trackingRule:
-    'Count unique click rows in openclaw_lead_events (event_key=node_audit_20260328) plus unique Telegram /start payloads.',
-};
+const roadmap = [
+  {
+    label: 'Now',
+    text: 'Service pages, clean landing pages, and simple proof-of-work builds.',
+  },
+  {
+    label: 'Next',
+    text: 'Tiny paid products with clear value and lightweight onboarding.',
+  },
+  {
+    label: 'Later',
+    text: 'Free releases that seed the audience and feed the bigger products.',
+  },
+];
 
 export default async function HomePage() {
   const status = await loadStatus();
@@ -74,24 +58,24 @@ export default async function HomePage() {
   return (
     <main style={styles.shell}>
       <section style={styles.hero}>
-        <div style={styles.badge}>node.xdoes.space · control surface</div>
+        <div style={styles.badge}>node.xdoes.space · launchpad</div>
         <div style={styles.heroGrid}>
           <div>
-            <h1 style={styles.h1}>Build the money loop.</h1>
+            <h1 style={styles.h1}>Services, products, and free releases.</h1>
             <p style={styles.lead}>
-              This dashboard is the front door for the current node product: it shows live status,
-              operating loops, and the next actions needed to get to self-sustaining revenue.
+              node.xdoes.space is the public face of the build team: a place to show what we sell,
+              what we are making next, and what we release for free to earn attention, trust, and revenue.
             </p>
             <div style={styles.ctaRow}>
-              <a style={styles.primaryButton} href="#status">View live status</a>
-              <a style={styles.secondaryButton} href="#audit">See the paid audit CTA</a>
+              <a style={styles.primaryButton} href="#offerings">See offerings</a>
+              <a style={styles.secondaryButton} href="#status">View live status</a>
             </div>
           </div>
 
           <aside style={styles.sideCard}>
-            <div style={styles.sideTitle}>What this site should do</div>
+            <div style={styles.sideTitle}>What this page should do</div>
             <ul style={styles.list}>
-              {nextActions.map((item) => (
+              {priorities.map((item) => (
                 <li key={item} style={styles.listItem}>
                   {item}
                 </li>
@@ -101,80 +85,57 @@ export default async function HomePage() {
         </div>
       </section>
 
-      <section style={styles.section}>
+      <section id="offerings" style={styles.section}>
         <div style={styles.sectionHeader}>
-          <h2 style={styles.h2}>The operating thesis</h2>
-          <p style={styles.muted}>Small product loops, clear ownership, measurable output.</p>
+          <h2 style={styles.h2}>What we offer</h2>
+          <p style={styles.muted}>Clear categories. No clutter. No internal-only links on the public page.</p>
         </div>
         <div style={styles.cardGrid3}>
-          {pillars.map((pillar) => (
-            <article key={pillar.title} style={styles.card}>
-              <h3 style={styles.h3}>{pillar.title}</h3>
-              <p style={styles.cardBody}>{pillar.body}</p>
+          {offerings.map((item) => (
+            <article key={item.title} style={styles.card}>
+              <h3 style={styles.h3}>{item.title}</h3>
+              <p style={styles.cardBody}>{item.body}</p>
             </article>
           ))}
         </div>
       </section>
 
-      <section id="loops" style={styles.section}>
+      <section style={styles.section}>
         <div style={styles.sectionHeader}>
-          <h2 style={styles.h2}>Cron job map</h2>
-          <p style={styles.muted}>Each loop has one job. No noise, no duplicate ownership.</p>
+          <h2 style={styles.h2}>Why this exists</h2>
+          <p style={styles.muted}>Turn the site into a public storefront for the agents team.</p>
         </div>
         <div style={styles.cardGrid2}>
-          {loops.map((loop) => (
-            <article key={loop.name} style={styles.card}>
+          {roadmap.map((item) => (
+            <article key={item.label} style={styles.card}>
               <div style={styles.loopRow}>
-                <h3 style={styles.h3}>{loop.name}</h3>
-                <span style={styles.pill}>{loop.cadence}</span>
+                <h3 style={styles.h3}>{item.label}</h3>
+                <span style={styles.pill}>{item.label}</span>
               </div>
-              <p style={styles.cardBody}>{loop.role}</p>
+              <p style={styles.cardBody}>{item.text}</p>
             </article>
           ))}
         </div>
-      </section>
-
-      <section id="audit" style={styles.section}>
-        <div style={styles.sectionHeader}>
-          <h2 style={styles.h2}>Single paid offer</h2>
-          <p style={styles.muted}>One CTA only until conversion tracking matures.</p>
-        </div>
-
-        <article style={styles.auditCard}>
-          <div style={styles.auditEyebrow}>Revenue path</div>
-          <h3 style={styles.auditTitle}>Node Revenue / Automation Audit</h3>
-          <p style={styles.cardBody}>
-            If you want a focused technical + growth teardown for your Node stack, request a paid
-            audit directly through Telegram.
-          </p>
-          <div style={styles.ctaRow}>
-            <a style={styles.auditButton} href={auditCta.href}>
-              {auditCta.label}
-            </a>
-          </div>
-          <p style={styles.trackingNote}>Tracking rule: {auditCta.trackingRule}</p>
-          <p style={styles.trackingNote}>Destination: {auditCta.destination}</p>
-        </article>
       </section>
 
       <section id="status" style={styles.section}>
         <div style={styles.sectionHeader}>
-          <h2 style={styles.h2}>Live status from Hostinger MySQL</h2>
-          <p style={styles.muted}>Public cards are rendered server-side. Secrets stay on the server.</p>
+          <h2 style={styles.h2}>Live status</h2>
+          <p style={styles.muted}>Rendered server-side from Hostinger MySQL when available.</p>
         </div>
 
         <div style={styles.highlightRow}>
           <div style={styles.metric}>
-            <div style={styles.metricLabel}>Deploy target</div>
+            <div style={styles.metricLabel}>Site</div>
             <div style={styles.metricValue}>node.xdoes.space</div>
           </div>
           <div style={styles.metric}>
-            <div style={styles.metricLabel}>Product repo</div>
-            <div style={styles.metricValue}>x-does/node</div>
+            <div style={styles.metricLabel}>Goal</div>
+            <div style={styles.metricValue}>Public conversion</div>
           </div>
           <div style={styles.metric}>
-            <div style={styles.metricLabel}>Purpose</div>
-            <div style={styles.metricValue}>Self-sustaining revenue</div>
+            <div style={styles.metricLabel}>Format</div>
+            <div style={styles.metricValue}>Launch page</div>
           </div>
         </div>
 
@@ -189,40 +150,38 @@ export default async function HomePage() {
             ))}
           </div>
         ) : (
-          <div style={styles.errorBox}>
-            DB connection failed: {status.error}
-          </div>
+          <div style={styles.errorBox}>DB connection failed: {status.error}</div>
         )}
       </section>
 
       <section style={styles.section}>
         <div style={styles.sectionHeader}>
-          <h2 style={styles.h2}>What the cron jobs should create</h2>
-          <p style={styles.muted}>A useful site gives the agents a place to push progress toward money.</p>
+          <h2 style={styles.h2}>What users should see</h2>
+          <p style={styles.muted}>Short, useful, and aligned with what the team is actually selling.</p>
         </div>
         <div style={styles.cardGrid2}>
           <article style={styles.card}>
-            <h3 style={styles.h3}>Products</h3>
+            <h3 style={styles.h3}>Services first</h3>
             <p style={styles.cardBody}>
-              Lead magnets, small utilities, proof pages, and conversion-focused landing pages.
+              The homepage should make it obvious that the team can build, polish, and ship web work quickly.
             </p>
           </article>
           <article style={styles.card}>
-            <h3 style={styles.h3}>Signals</h3>
+            <h3 style={styles.h3}>Products next</h3>
             <p style={styles.cardBody}>
-              Traffic, clicks, signups, replies, and revenue markers that show whether a loop is working.
+              New products should be introduced with a simple promise, a clear audience, and a fast path to test demand.
             </p>
           </article>
           <article style={styles.card}>
-            <h3 style={styles.h3}>Actions</h3>
+            <h3 style={styles.h3}>Free releases help growth</h3>
             <p style={styles.cardBody}>
-              Clear next steps for CEO, CTO, CFO, and CMO so the system can keep moving without stalling.
+              Free tools and experiments can build trust and bring people back when the paid offers are ready.
             </p>
           </article>
           <article style={styles.card}>
-            <h3 style={styles.h3}>Proof</h3>
+            <h3 style={styles.h3}>Keep it public-safe</h3>
             <p style={styles.cardBody}>
-              Live DB-backed cards, deployed pages, and a visible operating model that can be checked quickly.
+              Internal-only bot names, private workflows, and sensitive links should stay off the public face of the site.
             </p>
           </article>
         </div>
@@ -266,7 +225,7 @@ const styles = {
     fontSize: 'clamp(2.8rem, 6vw, 5.4rem)',
     lineHeight: 0.95,
     margin: '0 0 18px',
-    maxWidth: 780,
+    maxWidth: 820,
   },
   lead: {
     fontSize: '1.1rem',
@@ -431,41 +390,6 @@ const styles = {
     margin: 0,
     color: '#a7b7d6',
     lineHeight: 1.65,
-  },
-  auditCard: {
-    border: '1px solid rgba(144, 111, 255, 0.35)',
-    background: 'linear-gradient(160deg, rgba(35, 20, 75, 0.92), rgba(12, 18, 34, 0.95))',
-    borderRadius: 22,
-    padding: 24,
-    boxShadow: '0 18px 40px rgba(29, 15, 67, 0.45)',
-  },
-  auditEyebrow: {
-    color: '#c2afff',
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontSize: 12,
-    marginBottom: 8,
-    fontWeight: 700,
-  },
-  auditTitle: {
-    margin: '0 0 12px',
-    fontSize: '1.4rem',
-  },
-  auditButton: {
-    display: 'inline-flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: '12px 18px',
-    borderRadius: 14,
-    background: 'linear-gradient(135deg, #8f6bff, #4f9bff)',
-    color: '#fff',
-    textDecoration: 'none',
-    fontWeight: 800,
-  },
-  trackingNote: {
-    margin: '14px 0 0',
-    color: '#c7d4f0',
-    fontSize: 14,
   },
   errorBox: {
     padding: 18,

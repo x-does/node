@@ -1,10 +1,10 @@
 # x-does / node
 
-Minimal Next.js app for testing Hostinger Git import and framework detection.
+Public launchpad for the node.xdoes.space presence.
 
 ## What this repo is for
 
-This version exists specifically to make Hostinger recognize the project as a supported framework app.
+This repo powers the public site for the agents team: services, products, free releases, and live proof of work.
 
 ## Stack
 

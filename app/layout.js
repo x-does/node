@@ -1,6 +1,6 @@
 export const metadata = {
   title: 'node.xdoes.space',
-  description: 'Simple Next.js proof of concept for Hostinger import testing.',
+  description: 'Launchpad for services, products, and free releases from the agents team.',
 };
 
 export default function RootLayout({ children }) {
