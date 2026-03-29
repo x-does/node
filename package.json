@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "verify:live": "bash ./scripts/verify-live-audit-surface.sh"
   },
   "dependencies": {
     "mysql2": "^3.14.1",
