@@ -37,16 +37,20 @@ export async function GET() {
     const signal = {
       hasExternalIntentLast60m: metrics.windows?.last60m?.external?.unique > 0,
       hasExternalIntentLast24h: metrics.windows?.last24h?.external?.unique > 0,
+      hasNonAutomatedExternalIntentLast60m: (metrics.windows?.last60m?.external?.nonAutomatedTotal || 0) > 0,
+      hasNonAutomatedExternalIntentLast24h: (metrics.windows?.last24h?.external?.nonAutomatedTotal || 0) > 0,
       externalMinutesSinceLastEvent: minutesSince(metrics.external?.lastEventAt, nowMs),
       internalMinutesSinceLastEvent: minutesSince(metrics.internal?.lastEventAt, nowMs),
       windows: {
         last60m: {
           externalMinutesSinceLastEvent: minutesSince(metrics.windows?.last60m?.external?.lastEventAt, nowMs),
           internalMinutesSinceLastEvent: minutesSince(metrics.windows?.last60m?.internal?.lastEventAt, nowMs),
+          externalNonAutomatedTotal: metrics.windows?.last60m?.external?.nonAutomatedTotal || 0,
         },
         last24h: {
           externalMinutesSinceLastEvent: minutesSince(metrics.windows?.last24h?.external?.lastEventAt, nowMs),
           internalMinutesSinceLastEvent: minutesSince(metrics.windows?.last24h?.internal?.lastEventAt, nowMs),
+          externalNonAutomatedTotal: metrics.windows?.last24h?.external?.nonAutomatedTotal || 0,
         },
       },
     };
@@ -71,7 +75,7 @@ export async function GET() {
         freshnessRule:
           'Use metrics.external.lastEventAt and metrics.windows.{last60m,last24h}.external.lastEventAt to see if fresh external intent exists, independent of internal probes.',
         signalRule:
-          'signal.* gives decision-ready booleans and minute deltas from generatedAtUtc; treat hasExternalIntentLast60m=false as no fresh external click intent in the last hour.',
+          'signal.* gives decision-ready booleans and minute deltas from generatedAtUtc; treat hasExternalIntentLast60m=false as no fresh external click intent in the last hour, and prioritize hasNonAutomatedExternalIntentLast60m for likely-human intent.',
       })
     );
   } catch (error) {
