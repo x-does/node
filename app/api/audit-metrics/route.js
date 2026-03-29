@@ -64,6 +64,8 @@ export async function GET() {
           'Treat only unique Telegram /start payload conversations with a concrete revenue/automation problem as qualified leads.',
         sourceClassification:
           'Sources with prefixes deploy_probe*, probe_*, verify_*, internal_*, monitor_* are treated as internal verification traffic and excluded from external.unique.',
+        automationRule:
+          'Events with likely automated user-agents (bot/crawler/link-preview/monitor signatures) are flagged in metrics.*.automatedTotal for signal-quality filtering; they remain counted in totals for transparency.',
         windowsRule:
           'metrics.windows.last60m and metrics.windows.last24h use UTC rolling windows; each window includes windowStartUtc for deterministic interpretation.',
         freshnessRule:

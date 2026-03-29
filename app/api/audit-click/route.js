@@ -1,6 +1,6 @@
 import crypto from 'crypto';
 import { AUDIT_EVENT_KEY, buildAuditTelegramStartUrl } from '../../../lib/audit-config.js';
-import { normalizeAuditSource } from '../../../lib/audit-source.js';
+import { isLikelyAutomatedUserAgent, normalizeAuditSource } from '../../../lib/audit-source.js';
 import { insertLeadEvent } from '../../../lib/db.js';
 
 export const dynamic = 'force-dynamic';
@@ -45,6 +45,7 @@ export async function GET(request) {
   const userAgent = request.headers.get('user-agent') || null;
   const ipHash = hashIp(getClientIp(request));
   const destination = getDestination(eventKey);
+  const automatedUa = isLikelyAutomatedUserAgent(userAgent);
 
   try {
     await insertLeadEvent({
@@ -52,6 +53,7 @@ export async function GET(request) {
       source,
       userAgent,
       ipHash,
+      automatedUa,
     });
   } catch (error) {
     console.error('audit click insert failed', error);
