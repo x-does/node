@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { AUDIT_EVENT_KEY, buildAuditTelegramStartUrl } from '../../../lib/audit-config.js';
 import { isLikelyAutomatedUserAgent, normalizeAuditSource } from '../../../lib/audit-source.js';
 import { insertLeadEvent } from '../../../lib/db.js';
-import { NO_STORE_CACHE_CONTROL } from '../../../lib/http-cache.js';
+import { noStoreRedirect } from '../../../lib/http-cache.js';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
@@ -59,13 +59,5 @@ export async function GET(request) {
     console.error('audit click insert failed', error);
   }
 
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: destination,
-      'Cache-Control': NO_STORE_CACHE_CONTROL,
-      Pragma: 'no-cache',
-      Expires: '0',
-    },
-  });
+  return noStoreRedirect(destination);
 }
