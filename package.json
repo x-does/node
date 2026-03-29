@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "verify:live": "bash ./scripts/verify-live-audit-surface.sh"
+    "verify:live": "bash ./scripts/verify-live-audit-surface.sh",
+    "verify:live:readonly": "bash ./scripts/verify-live-audit-surface.sh --skip-click"
   },
   "dependencies": {
     "mysql2": "^3.14.1",

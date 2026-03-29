@@ -1,10 +1,75 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-BASE_URL="${1:-https://node.xdoes.space}"
-EVENT_KEY="${2:-node_audit_20260328}"
-TS="$(date +%s)"
-SRC="verify_script_${TS}"
+BASE_URL="https://node.xdoes.space"
+EVENT_KEY="node_audit_20260328"
+SKIP_CLICK=0
+SRC=""
+
+usage() {
+  cat <<'EOF'
+Usage: verify-live-audit-surface.sh [options] [base_url] [event_key]
+
+Options:
+  --base-url <url>     Verification target (default: https://node.xdoes.space)
+  --event-key <key>    Audit event key for click redirect check (default: node_audit_20260328)
+  --source <src>       Source value for /api/audit-click probe (default: verify_script_<ts>)
+  --skip-click         Read-only mode: skip /api/audit-click probe to avoid creating metrics events
+  -h, --help           Show this help
+
+Positional args remain supported for backward compatibility:
+  1st positional arg: base_url
+  2nd positional arg: event_key
+EOF
+}
+
+POSITIONAL=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --base-url)
+      BASE_URL="$2"
+      shift 2
+      ;;
+    --event-key)
+      EVENT_KEY="$2"
+      shift 2
+      ;;
+    --source)
+      SRC="$2"
+      shift 2
+      ;;
+    --skip-click)
+      SKIP_CLICK=1
+      shift
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    --)
+      shift
+      while [[ $# -gt 0 ]]; do
+        POSITIONAL+=("$1")
+        shift
+      done
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+
+if [[ ${#POSITIONAL[@]} -ge 1 ]]; then
+  BASE_URL="${POSITIONAL[0]}"
+fi
+if [[ ${#POSITIONAL[@]} -ge 2 ]]; then
+  EVENT_KEY="${POSITIONAL[1]}"
+fi
+
+if [[ -z "$SRC" ]]; then
+  SRC="verify_script_$(date +%s)"
+fi
 
 _tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${_tmp_dir}"' EXIT
@@ -29,6 +94,11 @@ fetch() {
 }
 
 echo "== Verifying live audit surface on ${BASE_URL} =="
+if [[ "$SKIP_CLICK" -eq 1 ]]; then
+  echo "Mode: read-only (skipping /api/audit-click probe event insertion)"
+else
+  echo "Mode: full (includes /api/audit-click probe)"
+fi
 
 fetch "${BASE_URL}/audit" "audit"
 check_contains "${_tmp_dir}/audit.headers" "200" "/audit status"
@@ -51,15 +121,19 @@ check_contains "${_tmp_dir}/metrics.body" '"ok":true' "/api/audit-metrics ok"
 check_contains "${_tmp_dir}/metrics.body" '"hasNonAutomatedExternalIntentLast60m"' "/api/audit-metrics signal field"
 echo "✅ /api/audit-metrics payload + no-store header verified"
 
-fetch "${BASE_URL}/api/audit-click?src=${SRC}&event=${EVENT_KEY}" "audit_click"
-check_contains "${_tmp_dir}/audit_click.headers" "302" "/api/audit-click status"
-if ! grep -Eiq "^location:\s*https://t\.me/world_fuckery_bot\?start=${EVENT_KEY}$" "${_tmp_dir}/audit_click.headers"; then
-  echo "❌ /api/audit-click destination: unexpected location header"
-  sed -n '1,120p' "${_tmp_dir}/audit_click.headers"
-  exit 1
+if [[ "$SKIP_CLICK" -eq 0 ]]; then
+  fetch "${BASE_URL}/api/audit-click?src=${SRC}&event=${EVENT_KEY}" "audit_click"
+  check_contains "${_tmp_dir}/audit_click.headers" "302" "/api/audit-click status"
+  if ! grep -Eiq "^location:\s*https://t\.me/world_fuckery_bot\?start=${EVENT_KEY}$" "${_tmp_dir}/audit_click.headers"; then
+    echo "❌ /api/audit-click destination: unexpected location header"
+    sed -n '1,120p' "${_tmp_dir}/audit_click.headers"
+    exit 1
+  fi
+  check_contains "${_tmp_dir}/audit_click.headers" "no-store" "/api/audit-click cache-control"
+  echo "✅ /api/audit-click redirect + no-store header verified"
 fi
-check_contains "${_tmp_dir}/audit_click.headers" "no-store" "/api/audit-click cache-control"
-echo "✅ /api/audit-click redirect + no-store header verified"
 
 echo "🎉 Live verification passed for ${BASE_URL}"
-echo "   Probe source used: ${SRC}"
+if [[ "$SKIP_CLICK" -eq 0 ]]; then
+  echo "   Probe source used: ${SRC}"
+fi
