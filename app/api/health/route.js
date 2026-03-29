@@ -1,19 +1,12 @@
 import { AUDIT_EVENT_KEY, ROOT_PARITY_MARKER } from '../../../lib/audit-config.js';
 import { getPool } from '../../../lib/db.js';
+import { withNoStoreHeaders } from '../../../lib/http-cache.js';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const EVENT_KEY = AUDIT_EVENT_KEY;
 const PARITY_MARKER = ROOT_PARITY_MARKER;
-const NO_STORE = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0';
-
-function withNoStoreHeaders(response) {
-  response.headers.set('Cache-Control', NO_STORE);
-  response.headers.set('Pragma', 'no-cache');
-  response.headers.set('Expires', '0');
-  return response;
-}
 
 export async function GET() {
   try {

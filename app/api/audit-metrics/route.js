@@ -1,18 +1,11 @@
 import { AUDIT_EVENT_KEY } from '../../../lib/audit-config.js';
 import { getLeadMetrics } from '../../../lib/db.js';
+import { withNoStoreHeaders } from '../../../lib/http-cache.js';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const EVENT_KEY = AUDIT_EVENT_KEY;
-const NO_STORE = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0';
-
-function withNoStoreHeaders(response) {
-  response.headers.set('Cache-Control', NO_STORE);
-  response.headers.set('Pragma', 'no-cache');
-  response.headers.set('Expires', '0');
-  return response;
-}
 
 function minutesSince(isoTimestamp, nowMs) {
   if (!isoTimestamp) {

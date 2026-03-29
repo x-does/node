@@ -2,12 +2,12 @@ import crypto from 'crypto';
 import { AUDIT_EVENT_KEY, buildAuditTelegramStartUrl } from '../../../lib/audit-config.js';
 import { isLikelyAutomatedUserAgent, normalizeAuditSource } from '../../../lib/audit-source.js';
 import { insertLeadEvent } from '../../../lib/db.js';
+import { NO_STORE_CACHE_CONTROL } from '../../../lib/http-cache.js';
 
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
 const EVENT_KEY = AUDIT_EVENT_KEY;
-const NO_STORE = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0';
 
 function parseSource(url) {
   return normalizeAuditSource(url.searchParams.get('src'));
@@ -63,7 +63,7 @@ export async function GET(request) {
     status: 302,
     headers: {
       Location: destination,
-      'Cache-Control': NO_STORE,
+      'Cache-Control': NO_STORE_CACHE_CONTROL,
       Pragma: 'no-cache',
       Expires: '0',
     },
