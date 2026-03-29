@@ -100,6 +100,14 @@ else
   echo "Mode: full (includes /api/audit-click probe)"
 fi
 
+fetch "${BASE_URL}/" "root"
+check_contains "${_tmp_dir}/root.headers" "200" "/ status"
+check_contains "${_tmp_dir}/root.headers" "no-store" "/ cache-control"
+check_contains "${_tmp_dir}/root.body" "Build the money loop." "/ parity marker"
+check_contains "${_tmp_dir}/root.body" "Request a paid Node Revenue Audit" "/ audit CTA text"
+check_contains "${_tmp_dir}/root.body" "src=hero_primary" "/ audit CTA source"
+echo "✅ / parity + CTA markers present"
+
 fetch "${BASE_URL}/audit" "audit"
 check_contains "${_tmp_dir}/audit.headers" "200" "/audit status"
 check_contains "${_tmp_dir}/audit.body" "Node Revenue / Automation Audit" "/audit marker"
