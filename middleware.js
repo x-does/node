@@ -5,7 +5,11 @@ const NO_STORE = 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age
 export function middleware(request) {
   const response = NextResponse.next();
 
-  if (request.nextUrl.pathname === '/' || request.nextUrl.pathname === '/api/health') {
+  if (
+    request.nextUrl.pathname === '/' ||
+    request.nextUrl.pathname === '/audit' ||
+    request.nextUrl.pathname === '/api/health'
+  ) {
     response.headers.set('Cache-Control', NO_STORE);
     response.headers.set('Pragma', 'no-cache');
     response.headers.set('Expires', '0');
@@ -15,5 +19,5 @@ export function middleware(request) {
 }
 
 export const config = {
-  matcher: ['/', '/api/health'],
+  matcher: ['/', '/audit', '/api/health'],
 };

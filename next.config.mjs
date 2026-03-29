@@ -16,6 +16,14 @@ const nextConfig = {
         ],
       },
       {
+        source: '/audit',
+        headers: [
+          { key: 'Cache-Control', value: NO_STORE },
+          { key: 'Pragma', value: 'no-cache' },
+          { key: 'Expires', value: '0' },
+        ],
+      },
+      {
         source: '/api/audit-click',
         headers: [
           { key: 'Cache-Control', value: NO_STORE },
