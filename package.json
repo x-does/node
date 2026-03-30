@@ -8,6 +8,7 @@
     "start": "next start",
     "verify:live": "bash ./scripts/verify-live-audit-surface.sh",
     "verify:live:readonly": "bash ./scripts/verify-live-audit-surface.sh --skip-click",
+    "verify:live:slow": "bash ./scripts/verify-live-audit-surface.sh --skip-click --connect-timeout 12 --max-time 35 --retries 4 --retry-delay-ms 1800",
     "verify:root": "bash ./scripts/verify-live-audit-surface.sh --skip-click"
   },
   "dependencies": {

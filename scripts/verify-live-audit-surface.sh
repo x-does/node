@@ -8,6 +8,8 @@ SKIP_CLICK=0
 SRC=""
 RETRIES=3
 RETRY_DELAY_MS=1200
+CURL_CONNECT_TIMEOUT=8
+CURL_MAX_TIME=20
 
 usage() {
   cat <<'EOF'
@@ -21,6 +23,8 @@ Options:
   --skip-click             Read-only mode: skip /api/audit-click probe to avoid creating metrics events
   --retries <n>            Number of fetch attempts per endpoint (default: 3)
   --retry-delay-ms <ms>    Delay between retries in milliseconds (default: 1200)
+  --connect-timeout <sec>  Curl connect timeout in seconds (default: 8)
+  --max-time <sec>         Curl total timeout per request in seconds (default: 20)
   -h, --help               Show this help
 
 Positional args remain supported for backward compatibility:
@@ -60,6 +64,14 @@ while [[ $# -gt 0 ]]; do
       RETRY_DELAY_MS="$2"
       shift 2
       ;;
+    --connect-timeout)
+      CURL_CONNECT_TIMEOUT="$2"
+      shift 2
+      ;;
+    --max-time)
+      CURL_MAX_TIME="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -97,6 +109,14 @@ if ! [[ "$RETRY_DELAY_MS" =~ ^[0-9]+$ ]]; then
   echo "❌ invalid --retry-delay-ms value: '${RETRY_DELAY_MS}' (must be integer >= 0)"
   exit 1
 fi
+if ! [[ "$CURL_CONNECT_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+  echo "❌ invalid --connect-timeout value: '${CURL_CONNECT_TIMEOUT}' (must be integer >= 1)"
+  exit 1
+fi
+if ! [[ "$CURL_MAX_TIME" =~ ^[1-9][0-9]*$ ]]; then
+  echo "❌ invalid --max-time value: '${CURL_MAX_TIME}' (must be integer >= 1)"
+  exit 1
+fi
 
 _tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${_tmp_dir}"' EXIT
@@ -116,7 +136,9 @@ check_contains() {
 fetch_once() {
   local url="$1"
   local name="$2"
-  curl -sS -D "${_tmp_dir}/${name}.headers" -o "${_tmp_dir}/${name}.body" "$url"
+  curl -sS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
+    -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
+    -D "${_tmp_dir}/${name}.headers" -o "${_tmp_dir}/${name}.body" "$url"
   sed -i 's/\r$//' "${_tmp_dir}/${name}.headers"
 }
 
@@ -227,6 +249,7 @@ PY
 
 echo "== Verifying live audit surface on ${BASE_URL} =="
 echo "Retries per endpoint: ${RETRIES} (delay ${RETRY_DELAY_MS}ms)"
+echo "Curl timeout policy: connect=${CURL_CONNECT_TIMEOUT}s total=${CURL_MAX_TIME}s"
 if [[ "$SKIP_CLICK" -eq 1 ]]; then
   echo "Mode: read-only (skipping /api/audit-click probe event insertion)"
 else
