@@ -6,18 +6,22 @@ EVENT_KEY="node_audit_20260328"
 PARITY_MARKER=""
 SKIP_CLICK=0
 SRC=""
+RETRIES=3
+RETRY_DELAY_MS=1200
 
 usage() {
   cat <<'EOF'
 Usage: verify-live-audit-surface.sh [options] [base_url] [event_key]
 
 Options:
-  --base-url <url>       Verification target (default: https://node.xdoes.space)
-  --event-key <key>      Audit event key for click redirect check (default: node_audit_20260328)
-  --parity-marker <txt>  Expected root parity marker (default: read from /api/health parityMarker)
-  --source <src>         Source value for /api/audit-click probe (default: verify_script_<ts>)
-  --skip-click           Read-only mode: skip /api/audit-click probe to avoid creating metrics events
-  -h, --help             Show this help
+  --base-url <url>         Verification target (default: https://node.xdoes.space)
+  --event-key <key>        Audit event key for click redirect check (default: node_audit_20260328)
+  --parity-marker <txt>    Expected root parity marker (default: read from /api/health parityMarker)
+  --source <src>           Source value for /api/audit-click probe (default: verify_script_<ts>)
+  --skip-click             Read-only mode: skip /api/audit-click probe to avoid creating metrics events
+  --retries <n>            Number of fetch attempts per endpoint (default: 3)
+  --retry-delay-ms <ms>    Delay between retries in milliseconds (default: 1200)
+  -h, --help               Show this help
 
 Positional args remain supported for backward compatibility:
   1st positional arg: base_url
@@ -48,6 +52,14 @@ while [[ $# -gt 0 ]]; do
       SKIP_CLICK=1
       shift
       ;;
+    --retries)
+      RETRIES="$2"
+      shift 2
+      ;;
+    --retry-delay-ms)
+      RETRY_DELAY_MS="$2"
+      shift 2
+      ;;
     -h|--help)
       usage
       exit 0
@@ -77,6 +89,15 @@ if [[ -z "$SRC" ]]; then
   SRC="verify_script_$(date +%s)"
 fi
 
+if ! [[ "$RETRIES" =~ ^[1-9][0-9]*$ ]]; then
+  echo "❌ invalid --retries value: '${RETRIES}' (must be integer >= 1)"
+  exit 1
+fi
+if ! [[ "$RETRY_DELAY_MS" =~ ^[0-9]+$ ]]; then
+  echo "❌ invalid --retry-delay-ms value: '${RETRY_DELAY_MS}' (must be integer >= 0)"
+  exit 1
+fi
+
 _tmp_dir="$(mktemp -d)"
 trap 'rm -rf "${_tmp_dir}"' EXIT
 
@@ -87,16 +108,96 @@ check_contains() {
   if ! grep -Fq "$needle" "$file"; then
     echo "❌ ${label}: missing '${needle}'"
     echo "---- file (${file}) ----"
-    sed -n '1,160p' "$file"
+    sed -n '1,200p' "$file"
     exit 1
   fi
 }
 
-fetch() {
+fetch_once() {
   local url="$1"
   local name="$2"
   curl -sS -D "${_tmp_dir}/${name}.headers" -o "${_tmp_dir}/${name}.body" "$url"
   sed -i 's/\r$//' "${_tmp_dir}/${name}.headers"
+}
+
+status_code() {
+  local name="$1"
+  awk 'NR==1 { print $2 }' "${_tmp_dir}/${name}.headers"
+}
+
+check_status_exact() {
+  local name="$1"
+  local expected="$2"
+  local label="$3"
+  local actual
+  actual="$(status_code "$name")"
+  if [[ "$actual" != "$expected" ]]; then
+    echo "❌ ${label}: expected status ${expected}, got ${actual:-<none>}"
+    sed -n '1,80p' "${_tmp_dir}/${name}.headers"
+    exit 1
+  fi
+}
+
+check_header_contains() {
+  local name="$1"
+  local header_name="$2"
+  local needle="$3"
+  local label="$4"
+
+  if ! awk -F': *' -v h="${header_name,,}" -v n="${needle,,}" '
+    BEGIN { found=0 }
+    {
+      key=tolower($1)
+      val=tolower(substr($0, index($0, ":")+1))
+      gsub(/^ +/, "", val)
+      if (key==h && index(val, n)>0) {
+        found=1
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' "${_tmp_dir}/${name}.headers"; then
+    echo "❌ ${label}: header '${header_name}' missing value containing '${needle}'"
+    sed -n '1,120p' "${_tmp_dir}/${name}.headers"
+    exit 1
+  fi
+}
+
+sleep_ms() {
+  local ms="$1"
+  python3 - "$ms" <<'PY'
+import sys, time
+ms = int(sys.argv[1])
+time.sleep(ms / 1000.0)
+PY
+}
+
+fetch_with_retry() {
+  local url="$1"
+  local name="$2"
+  local expected_status="$3"
+
+  local attempt=1
+  while (( attempt <= RETRIES )); do
+    if fetch_once "$url" "$name"; then
+      local code
+      code="$(status_code "$name")"
+      if [[ "$code" == "$expected_status" ]]; then
+        return 0
+      fi
+    fi
+
+    if (( attempt < RETRIES )); then
+      echo "⚠️ ${name}: attempt ${attempt}/${RETRIES} did not return status ${expected_status}; retrying in ${RETRY_DELAY_MS}ms"
+      sleep_ms "$RETRY_DELAY_MS"
+    fi
+
+    attempt=$((attempt + 1))
+  done
+
+  echo "❌ ${name}: exhausted ${RETRIES} attempts waiting for status ${expected_status}"
+  sed -n '1,120p' "${_tmp_dir}/${name}.headers" || true
+  sed -n '1,200p' "${_tmp_dir}/${name}.body" || true
+  exit 1
 }
 
 json_string_field() {
@@ -125,15 +226,16 @@ PY
 }
 
 echo "== Verifying live audit surface on ${BASE_URL} =="
+echo "Retries per endpoint: ${RETRIES} (delay ${RETRY_DELAY_MS}ms)"
 if [[ "$SKIP_CLICK" -eq 1 ]]; then
   echo "Mode: read-only (skipping /api/audit-click probe event insertion)"
 else
   echo "Mode: full (includes /api/audit-click probe)"
 fi
 
-fetch "${BASE_URL}/api/health" "health"
-check_contains "${_tmp_dir}/health.headers" "200" "/api/health status"
-check_contains "${_tmp_dir}/health.headers" "no-store" "/api/health cache-control"
+fetch_with_retry "${BASE_URL}/api/health" "health" "200"
+check_status_exact "health" "200" "/api/health status"
+check_header_contains "health" "cache-control" "no-store" "/api/health cache-control"
 check_contains "${_tmp_dir}/health.body" '"ok":true' "/api/health ok"
 
 HEALTH_PARITY_MARKER="$(json_string_field "${_tmp_dir}/health.body" parityMarker || true)"
@@ -141,13 +243,13 @@ HEALTH_EVENT_KEY="$(json_string_field "${_tmp_dir}/health.body" auditEventKey ||
 
 if [[ -z "$HEALTH_PARITY_MARKER" ]]; then
   echo "❌ /api/health parity marker: missing or non-string parityMarker field"
-  sed -n '1,160p' "${_tmp_dir}/health.body"
+  sed -n '1,200p' "${_tmp_dir}/health.body"
   exit 1
 fi
 
 if [[ -z "$HEALTH_EVENT_KEY" ]]; then
   echo "❌ /api/health event key: missing or non-string auditEventKey field"
-  sed -n '1,160p' "${_tmp_dir}/health.body"
+  sed -n '1,200p' "${_tmp_dir}/health.body"
   exit 1
 fi
 
@@ -164,37 +266,47 @@ check_contains "${_tmp_dir}/health.body" "\"parityMarker\":\"${PARITY_MARKER}\""
 check_contains "${_tmp_dir}/health.body" "\"auditEventKey\":\"${EVENT_KEY}\"" "/api/health event key"
 echo "✅ /api/health payload + no-store header verified"
 
-fetch "${BASE_URL}/" "root"
-check_contains "${_tmp_dir}/root.headers" "200" "/ status"
-check_contains "${_tmp_dir}/root.headers" "no-store" "/ cache-control"
+fetch_with_retry "${BASE_URL}/" "root" "200"
+check_status_exact "root" "200" "/ status"
+check_header_contains "root" "cache-control" "no-store" "/ cache-control"
 check_contains "${_tmp_dir}/root.body" "${PARITY_MARKER}" "/ parity marker"
 check_contains "${_tmp_dir}/root.body" "Request a paid Node Revenue Audit" "/ audit CTA text"
 check_contains "${_tmp_dir}/root.body" "src=hero_primary" "/ audit CTA source"
 echo "✅ / parity + CTA markers present"
 
-fetch "${BASE_URL}/audit" "audit"
-check_contains "${_tmp_dir}/audit.headers" "200" "/audit status"
-check_contains "${_tmp_dir}/audit.headers" "no-store" "/audit cache-control"
+fetch_with_retry "${BASE_URL}/audit" "audit" "200"
+check_status_exact "audit" "200" "/audit status"
+check_header_contains "audit" "cache-control" "no-store" "/audit cache-control"
 check_contains "${_tmp_dir}/audit.body" "Node Revenue / Automation Audit" "/audit marker"
 check_contains "${_tmp_dir}/audit.body" "Start the paid audit" "/audit CTA"
 echo "✅ /audit markers + no-store header present"
 
-fetch "${BASE_URL}/api/audit-metrics" "metrics"
-check_contains "${_tmp_dir}/metrics.headers" "200" "/api/audit-metrics status"
-check_contains "${_tmp_dir}/metrics.headers" "no-store" "/api/audit-metrics cache-control"
+fetch_with_retry "${BASE_URL}/api/audit-metrics" "metrics" "200"
+check_status_exact "metrics" "200" "/api/audit-metrics status"
+check_header_contains "metrics" "cache-control" "no-store" "/api/audit-metrics cache-control"
 check_contains "${_tmp_dir}/metrics.body" '"ok":true' "/api/audit-metrics ok"
 check_contains "${_tmp_dir}/metrics.body" '"hasNonAutomatedExternalIntentLast60m"' "/api/audit-metrics signal field"
 echo "✅ /api/audit-metrics payload + no-store header verified"
 
 if [[ "$SKIP_CLICK" -eq 0 ]]; then
-  fetch "${BASE_URL}/api/audit-click?src=${SRC}&event=${EVENT_KEY}" "audit_click"
-  check_contains "${_tmp_dir}/audit_click.headers" "302" "/api/audit-click status"
-  if ! grep -Eiq "^location:\s*https://t\.me/world_fuckery_bot\?start=${EVENT_KEY}$" "${_tmp_dir}/audit_click.headers"; then
+  fetch_with_retry "${BASE_URL}/api/audit-click?src=${SRC}&event=${EVENT_KEY}" "audit_click" "302"
+  check_status_exact "audit_click" "302" "/api/audit-click status"
+  if ! awk -F': *' -v expected="https://t.me/world_fuckery_bot?start=${EVENT_KEY}" '
+    BEGIN { found=0 }
+    {
+      if (tolower($1) == "location") {
+        value=$2
+        gsub(/\r/, "", value)
+        if (value == expected) found=1
+      }
+    }
+    END { exit(found ? 0 : 1) }
+  ' "${_tmp_dir}/audit_click.headers"; then
     echo "❌ /api/audit-click destination: unexpected location header"
     sed -n '1,120p' "${_tmp_dir}/audit_click.headers"
     exit 1
   fi
-  check_contains "${_tmp_dir}/audit_click.headers" "no-store" "/api/audit-click cache-control"
+  check_header_contains "audit_click" "cache-control" "no-store" "/api/audit-click cache-control"
   echo "✅ /api/audit-click redirect + no-store header verified"
 fi
 
