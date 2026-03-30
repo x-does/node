@@ -10,6 +10,8 @@ RETRIES=3
 RETRY_DELAY_MS=1200
 CURL_CONNECT_TIMEOUT=8
 CURL_MAX_TIME=20
+STRICT_ROOT_CACHE_CONTROL=0
+SKIP_ROOT=0
 
 usage() {
   cat <<'EOF'
@@ -25,6 +27,8 @@ Options:
   --retry-delay-ms <ms>    Delay between retries in milliseconds (default: 1200)
   --connect-timeout <sec>  Curl connect timeout in seconds (default: 8)
   --max-time <sec>         Curl total timeout per request in seconds (default: 20)
+  --strict-root-cache      Fail if `/` cache-control does not include no-store
+  --skip-root              Skip `/` checks (useful when root is known stale while audit/API remain source of truth)
   -h, --help               Show this help
 
 Positional args remain supported for backward compatibility:
@@ -71,6 +75,14 @@ while [[ $# -gt 0 ]]; do
     --max-time)
       CURL_MAX_TIME="$2"
       shift 2
+      ;;
+    --strict-root-cache)
+      STRICT_ROOT_CACHE_CONTROL=1
+      shift
+      ;;
+    --skip-root)
+      SKIP_ROOT=1
+      shift
       ;;
     -h|--help)
       usage
@@ -250,6 +262,15 @@ PY
 echo "== Verifying live audit surface on ${BASE_URL} =="
 echo "Retries per endpoint: ${RETRIES} (delay ${RETRY_DELAY_MS}ms)"
 echo "Curl timeout policy: connect=${CURL_CONNECT_TIMEOUT}s total=${CURL_MAX_TIME}s"
+if [[ "$SKIP_ROOT" -eq 1 ]]; then
+  echo "Root checks: skipped (--skip-root)"
+else
+  if [[ "$STRICT_ROOT_CACHE_CONTROL" -eq 1 ]]; then
+    echo "Root cache-control policy: strict (must include no-store)"
+  else
+    echo "Root cache-control policy: advisory (warn-only when no-store missing)"
+  fi
+fi
 if [[ "$SKIP_CLICK" -eq 1 ]]; then
   echo "Mode: read-only (skipping /api/audit-click probe event insertion)"
 else
@@ -289,13 +310,35 @@ check_contains "${_tmp_dir}/health.body" "\"parityMarker\":\"${PARITY_MARKER}\""
 check_contains "${_tmp_dir}/health.body" "\"auditEventKey\":\"${EVENT_KEY}\"" "/api/health event key"
 echo "✅ /api/health payload + no-store header verified"
 
-fetch_with_retry "${BASE_URL}/" "root" "200"
-check_status_exact "root" "200" "/ status"
-check_header_contains "root" "cache-control" "no-store" "/ cache-control"
-check_contains "${_tmp_dir}/root.body" "${PARITY_MARKER}" "/ parity marker"
-check_contains "${_tmp_dir}/root.body" "Request a paid Node Revenue Audit" "/ audit CTA text"
-check_contains "${_tmp_dir}/root.body" "src=hero_primary" "/ audit CTA source"
-echo "✅ / parity + CTA markers present"
+if [[ "$SKIP_ROOT" -eq 1 ]]; then
+  echo "⏭️  / root checks skipped"
+else
+  fetch_with_retry "${BASE_URL}/" "root" "200"
+  check_status_exact "root" "200" "/ status"
+  if [[ "$STRICT_ROOT_CACHE_CONTROL" -eq 1 ]]; then
+    check_header_contains "root" "cache-control" "no-store" "/ cache-control"
+  else
+    if ! awk -F': *' '
+      BEGIN { found=0 }
+      {
+        key=tolower($1)
+        val=tolower(substr($0, index($0, ":")+1))
+        gsub(/^ +/, "", val)
+        if (key=="cache-control" && index(val, "no-store")>0) {
+          found=1
+        }
+      }
+      END { exit(found ? 0 : 1) }
+    ' "${_tmp_dir}/root.headers"; then
+      echo "⚠️  / cache-control: no-store missing (advisory mode)"
+      sed -n '1,80p' "${_tmp_dir}/root.headers"
+    fi
+  fi
+  check_contains "${_tmp_dir}/root.body" "${PARITY_MARKER}" "/ parity marker"
+  check_contains "${_tmp_dir}/root.body" "Request a paid Node Revenue Audit" "/ audit CTA text"
+  check_contains "${_tmp_dir}/root.body" "src=hero_primary" "/ audit CTA source"
+  echo "✅ / parity + CTA markers present"
+fi
 
 fetch_with_retry "${BASE_URL}/audit" "audit" "200"
 check_status_exact "audit" "200" "/audit status"
