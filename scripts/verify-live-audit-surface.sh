@@ -174,9 +174,10 @@ echo "✅ / parity + CTA markers present"
 
 fetch "${BASE_URL}/audit" "audit"
 check_contains "${_tmp_dir}/audit.headers" "200" "/audit status"
+check_contains "${_tmp_dir}/audit.headers" "no-store" "/audit cache-control"
 check_contains "${_tmp_dir}/audit.body" "Node Revenue / Automation Audit" "/audit marker"
 check_contains "${_tmp_dir}/audit.body" "Start the paid audit" "/audit CTA"
-echo "✅ /audit markers present"
+echo "✅ /audit markers + no-store header present"
 
 fetch "${BASE_URL}/api/audit-metrics" "metrics"
 check_contains "${_tmp_dir}/metrics.headers" "200" "/api/audit-metrics status"
