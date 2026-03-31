@@ -1,22 +1,40 @@
 {
   "name": "x-does-node-next",
-  "version": "0.1.0",
+  "version": "2.0.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "verify:live": "bash ./scripts/verify-live-audit-surface.sh",
-    "verify:live:readonly": "bash ./scripts/verify-live-audit-surface.sh --skip-click",
-    "verify:live:slow": "bash ./scripts/verify-live-audit-surface.sh --skip-click --connect-timeout 12 --max-time 35 --retries 4 --retry-delay-ms 1800",
-    "verify:audit:readonly": "bash ./scripts/verify-live-audit-surface.sh --skip-click --skip-root",
-    "verify:root": "bash ./scripts/verify-live-audit-surface.sh --skip-click",
-    "verify:root:strict": "bash ./scripts/verify-live-audit-surface.sh --skip-click --strict-root-cache"
+    "lint": "next lint",
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:migrate": "prisma migrate dev",
+    "db:seed": "tsx prisma/seed.ts",
+    "verify:live": "bash scripts/verify-live-audit-surface.sh",
+    "verify:live:readonly": "bash scripts/verify-live-audit-surface.sh --skip-click",
+    "verify:audit:readonly": "bash scripts/verify-live-audit-surface.sh --skip-click --skip-root"
   },
   "dependencies": {
-    "mysql2": "^3.14.1",
-    "next": "14.2.15",
-    "react": "18.3.1",
-    "react-dom": "18.3.1"
+    "@prisma/client": "^6.19.2",
+    "@workos-inc/node": "^8.10.0",
+    "clsx": "^2.1.1",
+    "gray-matter": "^4.0.3",
+    "next": "^16.2.1",
+    "next-mdx-remote": "^6.0.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "tailwind-merge": "^3.5.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4.2.2",
+    "@tailwindcss/typography": "^0.5.19",
+    "@types/node": "^25.5.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "prisma": "^6.19.2",
+    "tailwindcss": "^4.2.2",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.2"
   }
 }

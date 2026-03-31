@@ -1,0 +1,39 @@
+@import 'tailwindcss';
+@plugin '@tailwindcss/typography';
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-display: var(--font-space-grotesk), ui-sans-serif, system-ui, sans-serif;
+
+  --color-background: #050b14;
+  --color-surface: #08111f;
+  --color-surface-raised: #0c1829;
+  --color-surface-overlay: #0a121feb;
+
+  --color-border: #7da5e129;
+  --color-border-bright: #6fc5ff47;
+
+  --color-foreground: #ecf3ff;
+  --color-muted: #a8b9d8;
+  --color-subtle: #8ea1c4;
+
+  --color-accent: #59b7ff;
+  --color-accent-bright: #79d7ff;
+  --color-accent-glow: #59b7ff1f;
+  --color-purple: #7d5bff;
+
+  --color-success: #34d399;
+  --color-warning: #fbbf24;
+  --color-error: #ef4444;
+  --color-error-bg: #531414e6;
+}
+
+body {
+  background:
+    radial-gradient(ellipse at top, rgba(45, 125, 255, 0.08), transparent 50%),
+    var(--color-background);
+}
+
+::selection {
+  background: rgba(89, 183, 255, 0.3);
+}

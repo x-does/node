@@ -2,5 +2,9 @@ node_modules/
 .next/
 out/
 .env
+.env.local
+.env.production.local
 hostinger.env
 .DS_Store
+*.tsbuildinfo
+next-env.d.ts
