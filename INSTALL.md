@@ -71,15 +71,16 @@ cp .env.example .env
 | Variable                | Description                                         | Example                                                             |
 | ----------------------- | --------------------------------------------------- | ------------------------------------------------------------------- |
 | `DATABASE_URL`          | Prisma MySQL connection string                      | `mysql://user:password@host:3306/dbname`                            |
+| `DB_HOST` / `DB_PORT` / `DB_NAME` / `DB_USER` / `DB_PASSWORD` | Legacy Hostinger-style vars supported as a fallback when `DATABASE_URL` is missing | `srv2082.hstgr.io`, `3306`, `u414330470_node`, ... |
 | `WORKOS_API_KEY`        | WorkOS API key (from WorkOS Dashboard → API Keys)   | `sk_test_...` (staging) / `sk_live_...` (production)                |
 | `WORKOS_CLIENT_ID`      | WorkOS Client ID (from WorkOS Dashboard → API Keys) | `client_01H...`                                                     |
 | `WORKOS_COOKIE_PASSWORD`| Encryption key for sealed sessions (32+ characters) | Generate with: `openssl rand -base64 32`                            |
 | `WORKOS_REDIRECT_URI`   | OAuth callback URL                                  | `http://localhost:3000/api/auth/callback` (local)                   |
 | `APP_URL`               | Public base URL of the app                          | `http://localhost:3000` (local) / `https://node.xdoes.space` (prod) |
 
-### Legacy Variables (reference only)
+### Legacy Variables (fallback)
 
-These individual DB vars are documented in `.env.example` for context but are **not used by the app**. Only `DATABASE_URL` is read by Prisma:
+These individual DB vars are supported when `DATABASE_URL` is not available in the hosting environment. The app will synthesize a MySQL connection string from them before Prisma starts:
 
 ```
 DB_HOST=srv2082.hstgr.io
@@ -258,6 +259,12 @@ Set these in your hosting platform's environment configuration (not in committed
 
 ```
 DATABASE_URL=mysql://prod_user:prod_password@prod_host:3306/prod_db
+# Or, if Hostinger only exposes legacy vars, set these instead:
+DB_HOST=prod_host
+DB_PORT=3306
+DB_NAME=prod_db
+DB_USER=prod_user
+DB_PASSWORD=prod_password
 WORKOS_API_KEY=sk_live_...
 WORKOS_CLIENT_ID=client_...
 WORKOS_COOKIE_PASSWORD=<your-32-char-secret>
