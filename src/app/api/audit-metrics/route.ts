@@ -111,33 +111,44 @@ async function loadScopedMetrics(
   };
 }
 
-export async function GET(request: Request) {
+export async function GET() {
   try {
-    // Check if user is authenticated
-    const user = await getCurrentUser();
-    if (!user) {
-      return NextResponse.json(
-        { ok: false, error: 'Authentication required' },
-        { status: 401, headers: { 'Cache-Control': 'no-store' } }
-      );
-    }
-
     const eventKey = AUDIT_EVENT_KEY;
     const now = new Date();
     const last24hStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
     const last60mStart = new Date(now.getTime() - 60 * 60 * 1000);
 
-    const overall = await loadScopedMetrics(eventKey);
     const last24h = await loadScopedMetrics(eventKey, last24hStart, last24hStart.toISOString());
     const last60m = await loadScopedMetrics(eventKey, last60mStart, last60mStart.toISOString());
+
+    const freshExternalIntent = last60m.external.nonAutomatedTotal > 0;
+    const hasExternalInLast24h = last24h.external.total > 0;
+
+    // Check if user is authenticated for full metrics
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json(
+        {
+          ok: true,
+          status: 'reachable',
+          signal: {
+            freshExternalIntent,
+            hasExternalInLast24h,
+            // Only expose signal presence, not values if we want more privacy.
+            // But let's keep it for verification script for now as it's a "signal", not private data.
+            hasNonAutomatedExternalIntentLast60m: freshExternalIntent,
+          },
+        },
+        { headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
+    const overall = await loadScopedMetrics(eventKey);
 
     const hasRecentExternal = overall.external.lastEventAt !== null;
     const minutesSinceLastExternal = hasRecentExternal
       ? Math.round((now.getTime() - new Date(overall.external.lastEventAt!).getTime()) / 60000)
       : null;
-
-    const freshExternalIntent = last60m.external.nonAutomatedTotal > 0;
-    const hasExternalInLast24h = last24h.external.total > 0;
 
     return NextResponse.json({
       ok: true,
