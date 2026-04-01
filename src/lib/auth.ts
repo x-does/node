@@ -111,3 +111,15 @@ export async function requireAuth(): Promise<AuthResult> {
   }
   return result;
 }
+
+/**
+ * Get the current user without redirecting.
+ * Returns the user if authenticated, otherwise returns null.
+ */
+export async function getCurrentUser(): Promise<AuthUser | null> {
+  const result = await getSessionFromCookies();
+  if (!result.authenticated) {
+    return null;
+  }
+  return result.user;
+}

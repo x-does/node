@@ -6,11 +6,8 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    const result: Array<{ db_name: string; now_ts: Date }> = await prisma.$queryRaw`
-      SELECT DATABASE() AS db_name, NOW() AS now_ts
-    `;
-
-    const row = result[0];
+    // Test database connection without exposing database name
+    await prisma.$queryRaw`SELECT 1`;
 
     return NextResponse.json(
       {
@@ -19,8 +16,7 @@ export async function GET() {
         framework: 'next-app-router',
         database: {
           connected: true,
-          name: row?.db_name ?? null,
-          serverTime: row?.now_ts ?? null,
+          serverTime: new Date().toISOString(),
         },
         timestamp: new Date().toISOString(),
         parityMarker: ROOT_PARITY_MARKER,
@@ -33,12 +29,15 @@ export async function GET() {
       },
     );
   } catch (err) {
+    // Log full error server-side for debugging
+    console.error('[health] Database connection failed:', err);
+
     return NextResponse.json(
       {
         ok: false,
         service: 'x-does-node-next',
         framework: 'next-app-router',
-        database: { connected: false, error: err instanceof Error ? err.message : 'unknown' },
+        database: { connected: false, error: 'connection_failed' },
         timestamp: new Date().toISOString(),
         parityMarker: ROOT_PARITY_MARKER,
         auditEventKey: AUDIT_EVENT_KEY,

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { isInternalAuditSource } from '@/lib/audit-source';
 import { AUDIT_EVENT_KEY } from '@/lib/audit-config';
+import { getCurrentUser } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -110,8 +111,17 @@ async function loadScopedMetrics(
   };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    // Check if user is authenticated
+    const user = await getCurrentUser();
+    if (!user) {
+      return NextResponse.json(
+        { ok: false, error: 'Authentication required' },
+        { status: 401, headers: { 'Cache-Control': 'no-store' } }
+      );
+    }
+
     const eventKey = AUDIT_EVENT_KEY;
     const now = new Date();
     const last24hStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
@@ -126,13 +136,19 @@ export async function GET() {
       ? Math.round((now.getTime() - new Date(overall.external.lastEventAt!).getTime()) / 60000)
       : null;
 
+    const freshExternalIntent = last60m.external.nonAutomatedTotal > 0;
+    const hasExternalInLast24h = last24h.external.total > 0;
+
     return NextResponse.json({
+      ok: true,
       ...overall,
       windows: { last24h, last60m },
       signal: {
-        freshExternalIntent: last60m.external.nonAutomatedTotal > 0,
-        hasExternalInLast24h: last24h.external.total > 0,
+        freshExternalIntent,
+        hasExternalInLast24h,
         minutesSinceLastExternalEvent: minutesSinceLastExternal,
+        // Backward-compatible alias expected by existing verification scripts.
+        hasNonAutomatedExternalIntentLast60m: freshExternalIntent,
       },
       trackingRule: `All events tracked under key "${eventKey}".`,
     });
@@ -140,7 +156,7 @@ export async function GET() {
     console.error('[audit-metrics]', err);
     return NextResponse.json(
       { ok: false, error: 'Failed to load metrics' },
-      { status: 500 },
+      { status: 500, headers: { 'Cache-Control': 'no-store' } },
     );
   }
 }
