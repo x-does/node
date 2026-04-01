@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
-    // Test database connection without exposing database name
+    // Re-deploy nudge 1774812000
     await prisma.$queryRaw`SELECT 1`;
 
     return NextResponse.json(

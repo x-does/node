@@ -148,9 +148,17 @@ check_contains() {
 fetch_once() {
   local url="$1"
   local name="$2"
+  # Cache busting for Hostinger hcdn (which ignores no-cache headers)
+  local buster="cb=$(date +%s%N)"
+  local target_url="$url"
+  if [[ "$url" == *"?"* ]]; then
+    target_url="${url}&${buster}"
+  else
+    target_url="${url}?${buster}"
+  fi
   curl -sS --connect-timeout "$CURL_CONNECT_TIMEOUT" --max-time "$CURL_MAX_TIME" \
     -H 'Cache-Control: no-cache' -H 'Pragma: no-cache' \
-    -D "${_tmp_dir}/${name}.headers" -o "${_tmp_dir}/${name}.body" "$url"
+    -D "${_tmp_dir}/${name}.headers" -o "${_tmp_dir}/${name}.body" "$target_url"
   sed -i 's/\r$//' "${_tmp_dir}/${name}.headers"
 }
 
@@ -222,7 +230,7 @@ fetch_with_retry() {
 
     if (( attempt < RETRIES )); then
       echo "⚠️ ${name}: attempt ${attempt}/${RETRIES} did not return status ${expected_status}; retrying in ${RETRY_DELAY_MS}ms"
-      sleep_ms "$RETRY_DELAY_MS"
+      sleep_ms "${RETRY_DELAY_MS}"
     fi
 
     attempt=$((attempt + 1))
