@@ -1,4 +1,7 @@
+'use client';
+
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 const NAV_LINKS = [
   { label: 'Home', href: '/' },
@@ -8,11 +11,15 @@ const NAV_LINKS = [
   { label: 'Audit', href: '/audit' },
 ];
 
-const RESOURCE_LINKS = [
-  { label: 'Health Check', href: '/api/health' },
-];
+const RESOURCE_LINKS = [{ label: 'Health Check', href: '/api/health' }];
 
 export function Footer() {
+  const pathname = usePathname();
+
+  if (pathname === '/main') {
+    return null;
+  }
+
   return (
     <footer className="border-t border-border bg-background">
       <div className="mx-auto max-w-6xl px-4 py-12">
