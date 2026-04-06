@@ -27,6 +27,7 @@ export async function GET(request: NextRequest) {
       httpOnly: true,
       secure: isProduction,
       sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 30,
     });
   }
 

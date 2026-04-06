@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorkOS } from '@/lib/workos';
+import { getWorkosClientId, getWorkosCookiePassword } from '@/lib/env';
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code');
@@ -8,12 +9,12 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(new URL('/api/auth/login', request.url));
   }
 
-  const clientId = process.env.WORKOS_CLIENT_ID;
-  const cookiePassword = process.env.WORKOS_COOKIE_PASSWORD;
+  const clientId = getWorkosClientId();
+  const cookiePassword = getWorkosCookiePassword();
 
   if (!clientId || !cookiePassword) {
     return NextResponse.json(
-      { error: 'WorkOS is not configured' },
+      { error: 'WorkOS is not configured (client id / cookie password missing)' },
       { status: 500 },
     );
   }
@@ -29,7 +30,6 @@ export async function GET(request: NextRequest) {
     });
 
     const response = NextResponse.redirect(new URL('/', request.url));
-
     const isProduction = process.env.NODE_ENV === 'production';
 
     response.cookies.set('wos-session', sealedSession!, {
@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
       httpOnly: true,
       secure: isProduction,
       sameSite: 'lax',
+      maxAge: 60 * 60 * 24 * 30,
     });
 
     return response;

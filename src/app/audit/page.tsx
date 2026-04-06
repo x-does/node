@@ -25,24 +25,45 @@ export default function AuditPage() {
           tracked audit intake.
         </p>
 
-        <div className="mt-6 flex flex-wrap gap-3">
-          <a
-            href={buildAuditClickHref('audit_page_primary', AUDIT_EVENT_KEY)}
-            className="inline-flex items-center rounded-xl bg-gradient-to-br from-accent-bright to-accent px-5 py-3 text-sm font-bold text-[#081122] shadow-lg shadow-accent/20 transition-all hover:brightness-110"
-          >
-            Start the paid audit
-          </a>
-          <a
-            href={buildAuditClickHref('audit_page_secondary', AUDIT_EVENT_KEY)}
-            className="inline-flex items-center rounded-xl border border-border-bright bg-surface px-5 py-3 text-sm font-semibold text-foreground transition-all hover:bg-surface-raised"
-          >
-            Prefer the fallback audit link
-          </a>
+        <div className="mt-6 rounded-2xl border border-border-bright bg-surface/70 p-5">
+          <h2 className="font-display text-lg font-semibold text-foreground">
+            Deposit-ready follow-up
+          </h2>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            Fixed-scope follow-up: <strong className="text-foreground">€750 total</strong>, with a
+            <strong className="text-foreground"> €375 deposit</strong> to reserve the slot. I do not
+            begin bespoke scoping until the deposit is in.
+          </p>
+          <p className="mt-2 text-sm leading-relaxed text-muted">
+            Turnaround is <strong className="text-foreground">5 business days</strong> after deposit.
+            If the review surfaces implementation work, I will quote that separately.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3">
+            <a
+              href={buildAuditClickHref('audit_page_primary', AUDIT_EVENT_KEY)}
+              className="inline-flex items-center rounded-xl bg-gradient-to-br from-accent-bright to-accent px-5 py-3 text-sm font-bold text-[#081122] shadow-lg shadow-accent/20 transition-all hover:brightness-110"
+            >
+              Request the deposit details
+            </a>
+            <a
+              href={buildAuditClickHref('audit_page_secondary', AUDIT_EVENT_KEY)}
+              className="inline-flex items-center rounded-xl border border-border-bright bg-surface px-5 py-3 text-sm font-semibold text-foreground transition-all hover:bg-surface-raised"
+            >
+              Fallback audit link
+            </a>
+          </div>
+          <p className="mt-3 text-xs text-subtle">
+            Reply with <code className="text-accent-bright">go</code> to receive the deposit handoff.
+          </p>
         </div>
 
         <ul className="mt-5 space-y-1 text-sm text-muted">
-          <li>Tracking key: <code className="text-accent-bright">{AUDIT_EVENT_KEY}</code></li>
-          <li>Parity marker: <code className="text-accent-bright">{ROOT_PARITY_MARKER}</code></li>
+          <li>
+            Tracking key: <code className="text-accent-bright">{AUDIT_EVENT_KEY}</code>
+          </li>
+          <li>
+            Parity marker: <code className="text-accent-bright">{ROOT_PARITY_MARKER}</code>
+          </li>
           <li>This page is kept dynamic/no-store for verification stability.</li>
         </ul>
       </div>

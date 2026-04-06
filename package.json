@@ -11,9 +11,12 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
+    "deploy:preflight": "bash scripts/deploy-preflight.sh",
+    "deploy:preflight:check": "bash scripts/deploy-preflight.sh --check-only",
     "verify:live": "bash scripts/verify-live-audit-surface.sh",
     "verify:live:readonly": "bash scripts/verify-live-audit-surface.sh --skip-click",
-    "verify:audit:readonly": "bash scripts/verify-live-audit-surface.sh --skip-click --skip-root"
+    "verify:audit:readonly": "bash scripts/verify-live-audit-surface.sh --skip-click --skip-root",
+    "verify:audit:regression": "bash scripts/verify-audit-regression.sh"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",

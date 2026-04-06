@@ -1,13 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getWorkOS } from '@/lib/workos';
+import { getWorkosClientId, getWorkosRedirectUri } from '@/lib/env';
 
 export async function GET() {
-  const clientId = process.env.WORKOS_CLIENT_ID;
-  const redirectUri = process.env.WORKOS_REDIRECT_URI;
+  const clientId = getWorkosClientId();
+  const redirectUri = getWorkosRedirectUri();
 
   if (!clientId || !redirectUri) {
     return NextResponse.json(
-      { error: 'WorkOS is not configured' },
+      { error: 'WorkOS is not configured (client id / redirect uri missing)' },
       { status: 500 },
     );
   }

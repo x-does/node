@@ -1,11 +1,12 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getWorkOS } from './workos';
+import { getWorkosCookiePassword } from './env';
 
 const COOKIE_NAME = 'wos-session';
 
 function cookiePassword(): string {
-  const pw = process.env.WORKOS_COOKIE_PASSWORD;
+  const pw = getWorkosCookiePassword();
   if (!pw) throw new Error('WORKOS_COOKIE_PASSWORD is not set');
   return pw;
 }

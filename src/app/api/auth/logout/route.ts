@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getWorkOS } from '@/lib/workos';
+import { getAppUrl, getWorkosCookiePassword, normalizeOrigin } from '@/lib/env';
 
 export async function POST(request: NextRequest) {
-  const appUrl = process.env.APP_URL || 'http://localhost:3000';
+  const appUrl = getAppUrl();
   const origin = request.headers.get('origin');
-  if (origin && origin !== appUrl) {
+  const appOrigin = normalizeOrigin(appUrl);
+
+  if (origin && normalizeOrigin(origin) !== appOrigin) {
     return NextResponse.json({ error: 'Invalid origin' }, { status: 403 });
   }
 
-  const cookiePassword = process.env.WORKOS_COOKIE_PASSWORD;
+  const cookiePassword = getWorkosCookiePassword();
   const sessionData = request.cookies.get('wos-session')?.value;
 
   if (!sessionData || !cookiePassword) {
@@ -24,7 +27,6 @@ export async function POST(request: NextRequest) {
     });
 
     const logoutUrl = await session.getLogoutUrl();
-
     const response = NextResponse.redirect(logoutUrl);
     response.cookies.delete('wos-session');
     return response;

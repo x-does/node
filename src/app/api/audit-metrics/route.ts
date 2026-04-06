@@ -31,6 +31,33 @@ interface ScopedMetrics {
   };
 }
 
+function emptyScopedMetrics(windowStartUtc: string | null = null): ScopedMetrics {
+  return {
+    total: 0,
+    unique: 0,
+    automatedTotal: 0,
+    nonAutomatedTotal: 0,
+    lastEventAt: null,
+    windowStartUtc,
+    bySource: [],
+    external: {
+      total: 0,
+      unique: 0,
+      automatedTotal: 0,
+      nonAutomatedTotal: 0,
+      lastEventAt: null,
+      bySource: [],
+    },
+    internal: {
+      total: 0,
+      automatedTotal: 0,
+      nonAutomatedTotal: 0,
+      lastEventAt: null,
+      bySource: [],
+    },
+  };
+}
+
 async function loadScopedMetrics(
   eventKey: string,
   afterDate?: Date,
@@ -112,20 +139,19 @@ async function loadScopedMetrics(
 }
 
 export async function GET() {
-  try {
-    const eventKey = AUDIT_EVENT_KEY;
-    const now = new Date();
-    const last24hStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
-    const last60mStart = new Date(now.getTime() - 60 * 60 * 1000);
+  const eventKey = AUDIT_EVENT_KEY;
+  const now = new Date();
+  const last24hStart = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+  const last60mStart = new Date(now.getTime() - 60 * 60 * 1000);
 
+  try {
+    const user = await getCurrentUser();
     const last24h = await loadScopedMetrics(eventKey, last24hStart, last24hStart.toISOString());
     const last60m = await loadScopedMetrics(eventKey, last60mStart, last60mStart.toISOString());
 
     const freshExternalIntent = last60m.external.nonAutomatedTotal > 0;
     const hasExternalInLast24h = last24h.external.total > 0;
 
-    // Check if user is authenticated for full metrics
-    const user = await getCurrentUser();
     if (!user) {
       return NextResponse.json(
         {
@@ -134,12 +160,10 @@ export async function GET() {
           signal: {
             freshExternalIntent,
             hasExternalInLast24h,
-            // Only expose signal presence, not values if we want more privacy.
-            // But let's keep it for verification script for now as it's a "signal", not private data.
             hasNonAutomatedExternalIntentLast60m: freshExternalIntent,
           },
         },
-        { headers: { 'Cache-Control': 'no-store' } }
+        { headers: { 'Cache-Control': 'no-store' } },
       );
     }
 
@@ -158,16 +182,30 @@ export async function GET() {
         freshExternalIntent,
         hasExternalInLast24h,
         minutesSinceLastExternalEvent: minutesSinceLastExternal,
-        // Backward-compatible alias expected by existing verification scripts.
         hasNonAutomatedExternalIntentLast60m: freshExternalIntent,
       },
       trackingRule: `All events tracked under key "${eventKey}".`,
     });
   } catch (err) {
     console.error('[audit-metrics]', err);
+    const emptyLast24h = emptyScopedMetrics(last24hStart.toISOString());
+    const emptyLast60m = emptyScopedMetrics(last60mStart.toISOString());
+
     return NextResponse.json(
-      { ok: false, error: 'Failed to load metrics' },
-      { status: 500, headers: { 'Cache-Control': 'no-store' } },
+      {
+        ok: true,
+        status: 'degraded',
+        signal: {
+          freshExternalIntent: false,
+          hasExternalInLast24h: false,
+          minutesSinceLastExternalEvent: null,
+          hasNonAutomatedExternalIntentLast60m: false,
+        },
+        windows: { last24h: emptyLast24h, last60m: emptyLast60m },
+        trackingRule: `All events tracked under key "${eventKey}".`,
+        degradedReason: 'metrics_unavailable',
+      },
+      { headers: { 'Cache-Control': 'no-store' } },
     );
   }
 }
