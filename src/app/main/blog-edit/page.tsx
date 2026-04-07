@@ -83,13 +83,22 @@ async function gh<T>(token: string, url: string, init?: RequestInit): Promise<T>
   return (await res.json()) as T;
 }
 
-async function getTextFile(token: string, ownerRepo: string, path: string, branch: string) {
-  const data = await gh<{ content?: string; encoding?: string }>(
-    token,
-    `${getApiBase(ownerRepo)}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}`,
-  );
-  if (!data.content || data.encoding !== 'base64') return null;
-  return atob(data.content.replace(/\n/g, ''));
+async function loadSqlEngine() {
+  const tryFetch = async (url: string) => {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) return null;
+    return new Uint8Array(await res.arrayBuffer());
+  };
+
+  const wasmBinary =
+    (await tryFetch("/vendor/sql-wasm-browser.wasm")) || (await tryFetch("/vendor/sql-wasm.wasm"));
+
+  if (!wasmBinary) {
+    throw new Error("Unable to load sql.js wasm (/vendor/sql-wasm-browser.wasm or /vendor/sql-wasm.wasm).");
+  }
+
+    const wasmBuffer = wasmBinary.buffer.slice(wasmBinary.byteOffset, wasmBinary.byteOffset + wasmBinary.byteLength) as ArrayBuffer;
+  return initSqlJs({ wasmBinary: wasmBuffer });
 }
 
 async function getBinaryFile(token: string, ownerRepo: string, path: string, branch: string) {
@@ -226,7 +235,7 @@ export default function BlogEditPage() {
 
     try {
       const ownerRepo = `${settings.owner}/${settings.repo}`;
-      const SQL = await initSqlJs({ locateFile: (f) => `/vendor/${f}` });
+      const SQL = await loadSqlEngine();
 
       const sqliteBytes = await getBinaryFile(token, ownerRepo, settings.sqlitePath, settings.branch);
 
@@ -274,7 +283,7 @@ export default function BlogEditPage() {
       const postPath = `${settings.baseDir}/${slug}/blog.md`;
       const now = new Date().toISOString();
 
-      const SQL = await initSqlJs({ locateFile: (f) => `/vendor/${f}` });
+      const SQL = await loadSqlEngine();
       const sqliteBytes = await getBinaryFile(token, ownerRepo, settings.sqlitePath, settings.branch);
       const db = sqliteBytes ? new SQL.Database(sqliteBytes) : new SQL.Database();
 
