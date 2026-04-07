@@ -5,6 +5,16 @@ function randomHex(size = 24) {
   return crypto.randomBytes(size).toString('hex');
 }
 
+function appOrigin(request: NextRequest) {
+  const configured = process.env.APP_URL || process.env.XDO_NODE_APP_URL;
+  if (configured) {
+    try {
+      return new URL(configured).origin;
+    } catch {}
+  }
+  return request.nextUrl.origin;
+}
+
 export async function GET(request: NextRequest) {
   const clientId = process.env.GITHUB_OAUTH_CLIENT_ID;
 
@@ -19,7 +29,7 @@ export async function GET(request: NextRequest) {
   }
 
   const state = randomHex(16);
-  const redirectUri = new URL('/api/blog-edit/auth/callback', request.url).toString();
+  const redirectUri = `${appOrigin(request)}/api/blog-edit/auth/callback`;
 
   const authUrl = new URL('https://github.com/login/oauth/authorize');
   authUrl.searchParams.set('client_id', clientId);
