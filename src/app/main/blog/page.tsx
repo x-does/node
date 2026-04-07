@@ -8,6 +8,13 @@ export const metadata = {
   description: 'Latest xdoes posts loaded from blog sqlite index.',
 };
 
+function splitCsv(input: string) {
+  return input
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
 export default async function MainBlogPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
   const q = (sp.q || '').trim();
@@ -15,8 +22,20 @@ export default async function MainBlogPage({ searchParams }: { searchParams: Sea
 
   return (
     <section className="py-10">
-      <h1 className="font-display text-5xl font-bold text-[#f3edff]">Blog</h1>
-      <p className="mt-3 text-[#b9accf]">Latest posts from the standalone blog repository sqlite index.</p>
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <h1 className="font-display text-5xl font-bold text-[#f3edff]">Blog</h1>
+          <p className="mt-3 text-[#b9accf]">Latest posts from the standalone blog repository sqlite index.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-sm">
+          <Link href="/main/blog-edit" className="rounded-lg border border-[#7f6b9d]/30 bg-[#1a1328] px-3 py-2 text-[#efe8ff] hover:border-[#a58ac8]/50">
+            Open editor
+          </Link>
+          <Link href="/main" className="rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/35 px-3 py-2 text-[#cdbfe4] hover:text-white">
+            Back to main
+          </Link>
+        </div>
+      </div>
 
       <form method="GET" className="mt-6 flex max-w-2xl gap-2">
         <input
@@ -28,17 +47,36 @@ export default async function MainBlogPage({ searchParams }: { searchParams: Sea
         <button className="rounded-lg border border-[#7f6b9d]/25 bg-[#1a1328] px-4 py-2 text-[#efe8ff]">Search</button>
       </form>
 
+      <p className="mt-3 text-xs uppercase tracking-[0.16em] text-[#a796c3]">{posts.length} post{posts.length === 1 ? '' : 's'} indexed</p>
+
       <div className="mt-7 grid gap-3">
         {posts.length === 0 ? (
-          <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/35 p-4 text-[#b7aacd]">No posts found.</div>
+          <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/35 p-4 text-[#b7aacd]">No posts found for this query.</div>
         ) : (
           posts.map((post) => (
             <article key={post.slug} className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-4">
               <h2 className="text-2xl font-semibold text-[#efe8ff]">{post.title}</h2>
               <p className="mt-2 text-[#c6badb]">{post.description || 'No description.'}</p>
+
+              <div className="mt-3 flex flex-wrap gap-2 text-xs">
+                {splitCsv(post.tags).map((tag) => (
+                  <span key={`tag-${post.slug}-${tag}`} className="rounded-full border border-[#7f6b9d]/35 px-2 py-1 text-[#c7bbdc]">
+                    #{tag}
+                  </span>
+                ))}
+                {splitCsv(post.refs).map((ref) => (
+                  <Link
+                    key={`ref-${post.slug}-${ref}`}
+                    href={`/main/blog?q=${encodeURIComponent(ref)}`}
+                    className="rounded-full border border-[#6d86c7]/35 px-2 py-1 text-[#bed1ff] hover:border-[#8ea6e8]"
+                  >
+                    @{ref}
+                  </Link>
+                ))}
+              </div>
+
               <div className="mt-3 text-sm text-[#ad9fc5]">
-                <div>tags: {post.tags || '-'}</div>
-                <div>refs: {post.refs || '-'}</div>
+                <div>links: {post.links || '-'}</div>
                 <div>
                   source file: <code>{post.folder}/{post.filename}</code>
                 </div>
@@ -47,10 +85,6 @@ export default async function MainBlogPage({ searchParams }: { searchParams: Sea
             </article>
           ))
         )}
-      </div>
-
-      <div className="mt-8">
-        <Link href="/main" className="text-sm text-[#b9accf] hover:text-white">← Back to main</Link>
       </div>
     </section>
   );

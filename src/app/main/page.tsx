@@ -1,9 +1,12 @@
+import Link from 'next/link';
+
 const MENU = [
-  { label: 'Interactive/apps' },
-  { label: 'Youtube' },
-  { label: 'Blog' },
-  { label: 'XD License' },
-  { label: 'Sponsors' },
+  { label: 'Interactive/apps', href: '/main/interactive-apps' },
+  { label: 'Youtube', href: 'https://youtube.com/@x-does', external: true },
+  { label: 'Blog', href: '/main/blog' },
+  { label: 'Blog editor', href: '/main/blog-edit' },
+  { label: 'XD License', href: '/main/xd-license' },
+  { label: 'Sponsors', href: '/main/sponsors' },
 ];
 
 export const metadata = {
@@ -27,15 +30,25 @@ export default function MainPage() {
         <ul className="space-y-2">
           {MENU.map((item) => (
             <li key={item.label}>
-              <button
-                type="button"
-                disabled
-                aria-disabled="true"
-                className="flex w-full cursor-not-allowed items-center justify-between rounded-xl border border-[#7f6b9d]/20 bg-[#110d19]/35 px-4 py-3 text-left text-lg text-[#c8bbdf]/70"
-              >
-                <span>{item.label}</span>
-                <span className="text-xs uppercase tracking-[0.18em] text-[#9f8dbd]">coming soon</span>
-              </button>
+              {item.external ? (
+                <a
+                  href={item.href}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex w-full items-center justify-between rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 px-4 py-3 text-left text-lg text-[#e7dcff] transition hover:border-[#a58ac8]/60 hover:bg-[#1b1429]"
+                >
+                  <span>{item.label}</span>
+                  <span className="text-xs uppercase tracking-[0.18em] text-[#b9a6d8]">open ↗</span>
+                </a>
+              ) : (
+                <Link
+                  href={item.href}
+                  className="flex w-full items-center justify-between rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 px-4 py-3 text-left text-lg text-[#e7dcff] transition hover:border-[#a58ac8]/60 hover:bg-[#1b1429]"
+                >
+                  <span>{item.label}</span>
+                  <span className="text-xs uppercase tracking-[0.18em] text-[#b9a6d8]">open</span>
+                </Link>
+              )}
             </li>
           ))}
         </ul>

@@ -138,6 +138,12 @@ function preprocessMarkdownForPreview(md: string) {
   return md.replace(/(^|\s)@([a-z0-9-]{2,})/gi, '$1[@$2](/main/blog?q=$2)');
 }
 
+function urlSafeText(text: string) {
+  return text.replace(/[()]/g, '').trim();
+}
+
+const VIEW_SEQUENCE: ViewMode[] = ['split', 'edit', 'preview'];
+
 export default function BlogEditPage() {
   const [tab, setTab] = useState<Tab>('editor');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
@@ -199,10 +205,23 @@ export default function BlogEditPage() {
     }
 
     function onKey(e: KeyboardEvent) {
-      // quick switch when Ctrl+Shift is pressed together
-      if ((e.key === 'Shift' && e.ctrlKey) || (e.key === 'Control' && e.shiftKey)) {
+      if (!e.ctrlKey || !e.shiftKey || e.repeat) return;
+
+      if (e.code === 'KeyF') {
+        e.preventDefault();
         setFullscreen((v) => !v);
-        setViewMode((v) => (v === 'edit' ? 'preview' : 'edit'));
+        return;
+      }
+
+      if (e.code === 'Enter') {
+        e.preventDefault();
+        setViewMode((v) => (v === 'preview' ? 'edit' : 'preview'));
+        return;
+      }
+
+      if (e.code === 'Backquote') {
+        e.preventDefault();
+        setViewMode((v) => VIEW_SEQUENCE[(VIEW_SEQUENCE.indexOf(v) + 1) % VIEW_SEQUENCE.length]);
       }
     }
 
@@ -226,6 +245,11 @@ export default function BlogEditPage() {
     const selected = markdown.slice(start, end) || 'text';
     const next = `${markdown.slice(0, start)}${before}${selected}${after}${markdown.slice(end)}`;
     setMarkdown(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.selectionStart = start + before.length;
+      el.selectionEnd = start + before.length + selected.length;
+    });
   }
 
   function insertAtCursor(text: string) {
@@ -235,15 +259,54 @@ export default function BlogEditPage() {
     const end = el.selectionEnd;
     const next = `${markdown.slice(0, start)}${text}${markdown.slice(end)}`;
     setMarkdown(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      const pos = start + text.length;
+      el.selectionStart = pos;
+      el.selectionEnd = pos;
+    });
   }
 
   async function onPickImage(file: File) {
     const reader = new FileReader();
     reader.onload = () => {
       const src = String(reader.result || '');
-      insertAtCursor(`\n![${file.name}](${src})\n`);
+      insertAtCursor(`\n![${urlSafeText(file.name)}](${src})\n`);
     };
     reader.readAsDataURL(file);
+  }
+
+  function onInsertImageUrl() {
+    const value = window.prompt('Image URL');
+    if (!value) return;
+    insertAtCursor(`\n![image](${value.trim()})\n`);
+  }
+
+  function onInsertLink() {
+    const value = window.prompt('URL for link', 'https://example.com');
+    if (!value) return;
+    wrapSelection('[', `](${value.trim()})`);
+  }
+
+  function onInsertYouTube() {
+    const value = window.prompt('YouTube URL');
+    if (!value) return;
+    const url = value.trim();
+    const matched = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{6,})/);
+    const id = matched?.[1];
+    if (!id) {
+      setMsg('Could not detect a YouTube video ID in the URL.');
+      return;
+    }
+    insertAtCursor(`\n<iframe width="560" height="315" src="https://www.youtube.com/embed/${id}" title="YouTube video" frameborder="0" allowfullscreen></iframe>\n`);
+  }
+
+  function onInsertRef() {
+    const value = window.prompt('Reference slug (without @)');
+    if (!value) return;
+    const ref = toSlug(value);
+    if (!ref) return;
+    insertAtCursor(` @${ref}`);
   }
 
   async function loadRepos() {
@@ -407,13 +470,21 @@ export default function BlogEditPage() {
     return [p.title, p.description, p.tags, p.refs, p.links, p.slug].some((v) => (v || '').toLowerCase().includes(q));
   });
 
+  const showEditor = viewMode === 'split' || viewMode === 'edit';
+  const showPreview = viewMode === 'split' || viewMode === 'preview';
+
   return (
-    <div className={fullscreen ? 'fixed inset-0 z-50 overflow-auto bg-[#0a0811] p-6' : ''}>
-      <section className="py-10">
-        <h1 className="text-5xl font-black text-[#f3edff]">Blog Editor App</h1>
+    <div className={fullscreen ? 'fixed inset-0 z-50 overflow-auto bg-[#07060c] p-6' : ''}>
+      <section className="py-8">
+        <h1 className="text-4xl font-black text-[#f3edff] sm:text-5xl">Blog Editor App</h1>
         <p className="mt-2 text-[#b9accf]">
-          Standalone editor app under /main. Auth users can publish; viewers can read.
-          <span className="ml-2 rounded border border-[#7f6b9d]/30 px-2 py-0.5 text-xs">Ctrl+Shift: quick edit/preview fullscreen switch</span>
+          Self-contained authoring flow for /main/blog-edit.
+          <span className="ml-2 inline-flex gap-2 rounded border border-[#7f6b9d]/30 px-2 py-0.5 text-xs">
+            <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> fullscreen
+          </span>
+          <span className="ml-2 inline-flex gap-2 rounded border border-[#7f6b9d]/30 px-2 py-0.5 text-xs">
+            <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> edit/preview
+          </span>
         </p>
 
         <div className="mt-5 flex flex-wrap gap-2">
@@ -422,7 +493,7 @@ export default function BlogEditPage() {
           <button onClick={() => setTab('settings')} className={btn(tab === 'settings')}>Settings</button>
         </div>
 
-        <div className="mt-6 rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-4 text-sm text-[#c7bbdc]">
+        <div className="mt-6 rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/55 p-4 text-sm text-[#c7bbdc]">
           <div>Auth user: <strong>{authedUser || 'not authenticated'}</strong></div>
           <div>Target: <strong>{settings.owner}/{settings.repo}</strong> @ <strong>{settings.branch}</strong></div>
           <div className="mt-3 flex flex-wrap gap-2">
@@ -443,40 +514,40 @@ export default function BlogEditPage() {
             <input className={input} placeholder="Refs/blog slugs (comma separated, or use @slug in content)" value={refs} onChange={(e) => setRefs(e.target.value)} />
             <input className={input} placeholder="Links (comma separated URLs)" value={links} onChange={(e) => setLinks(e.target.value)} />
 
-            <div className="flex flex-wrap gap-2 rounded-lg border border-[#7f6b9d]/25 bg-[#0f0b17] p-2 text-xs">
+            <div className="sticky top-3 z-10 flex flex-wrap gap-2 rounded-lg border border-[#7f6b9d]/25 bg-[#0d0a15]/95 p-2 text-xs backdrop-blur">
+              <button className={miniBtn} onClick={() => insertAtCursor('\n# Heading 1\n')}>H1</button>
+              <button className={miniBtn} onClick={() => insertAtCursor('\n## Heading 2\n')}>H2</button>
+              <button className={miniBtn} onClick={() => insertAtCursor('\n### Heading 3\n')}>H3</button>
               <button className={miniBtn} onClick={() => wrapSelection('**', '**')}>Bold</button>
               <button className={miniBtn} onClick={() => wrapSelection('_', '_')}>Italic</button>
-              <button className={miniBtn} onClick={() => insertAtCursor('\n## Heading\n')}>Header</button>
-              <button className={miniBtn} onClick={() => insertAtCursor('\nParagraph text\n')}>Paragraph</button>
-              <button className={miniBtn} onClick={() => wrapSelection('<u>', '</u>')}>Underline</button>
-              <button className={miniBtn} onClick={() => wrapSelection('<mark>', '</mark>')}>Highlight</button>
-              <button className={miniBtn} onClick={() => wrapSelection('<span style="color:#c8a2ff">', '</span>')}>Color</button>
-              <button className={miniBtn} onClick={() => wrapSelection('<span style="font-family:Georgia,serif">', '</span>')}>Font</button>
-              <button className={miniBtn} onClick={() => wrapSelection('[', '](https://example.com)')}>Link</button>
+              <button className={miniBtn} onClick={() => wrapSelection('`', '`')}>Inline code</button>
               <button className={miniBtn} onClick={() => insertAtCursor('\n```ts\nconsole.log("code block")\n```\n')}>Code block</button>
-              <button className={miniBtn} onClick={() => insertAtCursor('\n<iframe width="560" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ" title="YouTube video" frameborder="0" allowfullscreen></iframe>\n')}>YouTube</button>
-              <button className={miniBtn} onClick={() => imagePickerRef.current?.click()}>Image</button>
+              <button className={miniBtn} onClick={() => insertAtCursor('\n> Quote\n')}>Quote</button>
+              <button className={miniBtn} onClick={() => insertAtCursor('\n- List item\n- List item\n')}>UL</button>
+              <button className={miniBtn} onClick={() => insertAtCursor('\n1. First\n2. Second\n')}>OL</button>
+              <button className={miniBtn} onClick={() => insertAtCursor('\n- [ ] Task\n- [x] Done\n')}>Task list</button>
+              <button className={miniBtn} onClick={onInsertLink}>Link</button>
+              <button className={miniBtn} onClick={onInsertImageUrl}>Image URL</button>
+              <button className={miniBtn} onClick={() => imagePickerRef.current?.click()}>Image file</button>
+              <button className={miniBtn} onClick={onInsertYouTube}>YouTube</button>
+              <button className={miniBtn} onClick={onInsertRef}>@ref</button>
               <input ref={imagePickerRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickImage(f); e.currentTarget.value = ''; }} />
             </div>
 
-            <div className="flex gap-2 text-sm">
+            <div className="flex flex-wrap gap-2 text-sm">
               <button className={btn(viewMode === 'split')} onClick={() => setViewMode('split')}>Split</button>
               <button className={btn(viewMode === 'edit')} onClick={() => setViewMode('edit')}>Editor only</button>
               <button className={btn(viewMode === 'preview')} onClick={() => setViewMode('preview')}>Preview only</button>
             </div>
 
-            {(viewMode === 'split' || viewMode === 'edit') && (viewMode === 'split' ? (
-              <div className="grid gap-3 md:grid-cols-2">
+            <div className={viewMode === 'split' ? 'grid gap-3 md:grid-cols-2' : 'grid gap-3'}>
+              {showEditor ? (
                 <textarea ref={editorRef} className={textarea} value={markdown} onChange={(e) => setMarkdown(e.target.value)} />
-                <div className="rounded-lg border border-[#7f6b9d]/25 bg-[#0f0b17] p-3" dangerouslySetInnerHTML={preview} />
-              </div>
-            ) : (
-              <textarea ref={editorRef} className={textarea} value={markdown} onChange={(e) => setMarkdown(e.target.value)} />
-            ))}
-
-            {viewMode === 'preview' && (
-              <div className="rounded-lg border border-[#7f6b9d]/25 bg-[#0f0b17] p-3" dangerouslySetInnerHTML={preview} />
-            )}
+              ) : null}
+              {showPreview ? (
+                <div className="preview rounded-lg border border-[#7f6b9d]/25 bg-[#0f0b17] p-3" dangerouslySetInnerHTML={preview} />
+              ) : null}
+            </div>
 
             <button onClick={publish} className={btn(false)} disabled={!token || loading}>Publish to selected repo</button>
           </div>
@@ -533,6 +604,42 @@ export default function BlogEditPage() {
           </div>
         )}
       </section>
+
+      <style jsx>{`
+        .preview :global(h1), .preview :global(h2), .preview :global(h3) {
+          color: #f3edff;
+          font-weight: 800;
+          margin-top: 1rem;
+          margin-bottom: 0.5rem;
+        }
+        .preview :global(p), .preview :global(li), .preview :global(blockquote) {
+          color: #d5caea;
+          line-height: 1.65;
+        }
+        .preview :global(a) {
+          color: #c6a8ff;
+          text-decoration: underline;
+        }
+        .preview :global(pre) {
+          background: #09070f;
+          color: #efe8ff;
+          border: 1px solid rgba(127, 107, 157, 0.3);
+          border-radius: 10px;
+          padding: 0.75rem;
+          overflow-x: auto;
+        }
+        .preview :global(code) {
+          background: rgba(13, 10, 21, 0.9);
+          border-radius: 6px;
+          padding: 0.1rem 0.3rem;
+          border: 1px solid rgba(127, 107, 157, 0.2);
+        }
+        .preview :global(img), .preview :global(iframe) {
+          max-width: 100%;
+          border-radius: 10px;
+          border: 1px solid rgba(127, 107, 157, 0.25);
+        }
+      `}</style>
     </div>
   );
 }
