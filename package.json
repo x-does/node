@@ -21,6 +21,7 @@
   "dependencies": {
     "@prisma/client": "^6.19.2",
     "@workos-inc/node": "^8.10.0",
+    "better-sqlite3": "^11.10.0",
     "clsx": "^2.1.1",
     "gray-matter": "^4.0.3",
     "next": "^16.2.1",
@@ -32,6 +33,7 @@
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.2",
     "@tailwindcss/typography": "^0.5.19",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^25.5.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
