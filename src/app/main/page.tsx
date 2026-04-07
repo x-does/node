@@ -1,11 +1,9 @@
-import Link from 'next/link';
-
 const MENU = [
-  { label: 'Interactive/apps', href: '/main/interactive-apps', note: 'coming soon' },
-  { label: 'Youtube', href: 'https://youtube.com/@x-does', note: 'youtube.com/@x-does', external: true },
-  { label: 'Blog', href: '/main/blog' },
-  { label: 'XD License', href: '/main/xd-license' },
-  { label: 'Sponsors', href: '/main/sponsors' },
+  { label: 'Interactive/apps' },
+  { label: 'Youtube' },
+  { label: 'Blog' },
+  { label: 'XD License' },
+  { label: 'Sponsors' },
 ];
 
 export const metadata = {
@@ -29,26 +27,15 @@ export default function MainPage() {
         <ul className="space-y-2">
           {MENU.map((item) => (
             <li key={item.label}>
-              {item.external ? (
-                <a
-                  href={item.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center justify-between rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/55 px-4 py-3 text-lg text-[#efe8ff] transition hover:border-[#a58ac8]/35"
-                >
-                  <span>{item.label}</span>
-                  <span className="text-[#b7aacd]">↗</span>
-                </a>
-              ) : (
-                <Link
-                  href={item.href}
-                  className="flex items-center justify-between rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/55 px-4 py-3 text-lg text-[#efe8ff] transition hover:border-[#a58ac8]/35"
-                >
-                  <span>{item.label}</span>
-                  <span className="text-[#b7aacd]">↗</span>
-                </Link>
-              )}
-              {item.note ? <p className="px-2 pt-1 text-xs text-[#a89abf]">{item.note}</p> : null}
+              <button
+                type="button"
+                disabled
+                aria-disabled="true"
+                className="flex w-full cursor-not-allowed items-center justify-between rounded-xl border border-[#7f6b9d]/20 bg-[#110d19]/35 px-4 py-3 text-left text-lg text-[#c8bbdf]/70"
+              >
+                <span>{item.label}</span>
+                <span className="text-xs uppercase tracking-[0.18em] text-[#9f8dbd]">coming soon</span>
+              </button>
             </li>
           ))}
         </ul>

@@ -1,12 +1,4 @@
-import Link from 'next/link';
-
-const MENU = [
-  { label: 'Interactive/apps', href: '/main/interactive-apps' },
-  { label: 'Youtube', href: 'https://youtube.com/@x-does', external: true },
-  { label: 'Blog', href: '/main/blog' },
-  { label: 'XD License', href: '/main/xd-license' },
-  { label: 'Sponsors', href: '/main/sponsors' },
-];
+const MENU = ['Interactive/apps', 'Youtube', 'Blog', 'XD License', 'Sponsors'];
 
 const SOCIALS = [
   { label: 'x', href: 'https://x.com/xdoes' },
@@ -24,27 +16,15 @@ export default function MainLayout({ children }: { children: React.ReactNode }) 
 
         <footer className="mt-8 space-y-4 border-t border-[#7f6b9d]/20 pt-4">
           <nav className="flex flex-wrap gap-2 text-sm text-[#c8bcdd]">
-            {MENU.map((item) =>
-              item.external ? (
-                <a
-                  key={item.label}
-                  href={item.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-full border border-[#7f6b9d]/25 px-3 py-1.5 transition hover:border-[#a58ac8]/35 hover:text-white"
-                >
-                  {item.label}
-                </a>
-              ) : (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className="rounded-full border border-[#7f6b9d]/25 px-3 py-1.5 transition hover:border-[#a58ac8]/35 hover:text-white"
-                >
-                  {item.label}
-                </Link>
-              ),
-            )}
+            {MENU.map((item) => (
+              <span
+                key={item}
+                className="cursor-not-allowed rounded-full border border-[#7f6b9d]/20 px-3 py-1.5 text-[#c8bcdd]/70"
+                aria-disabled="true"
+              >
+                {item}
+              </span>
+            ))}
           </nav>
 
           <div className="flex flex-wrap gap-3 text-xs lowercase text-[#ac9cc4]">
