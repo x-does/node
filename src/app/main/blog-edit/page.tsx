@@ -226,7 +226,7 @@ export default function BlogEditPage() {
 
     try {
       const ownerRepo = `${settings.owner}/${settings.repo}`;
-      const SQL = await initSqlJs({ locateFile: (f) => `https://sql.js.org/dist/${f}` });
+      const SQL = await initSqlJs({ locateFile: (f) => `/vendor/${f}` });
 
       const sqliteBytes = await getBinaryFile(token, ownerRepo, settings.sqlitePath, settings.branch);
 
@@ -274,7 +274,7 @@ export default function BlogEditPage() {
       const postPath = `${settings.baseDir}/${slug}/blog.md`;
       const now = new Date().toISOString();
 
-      const SQL = await initSqlJs({ locateFile: (f) => `https://sql.js.org/dist/${f}` });
+      const SQL = await initSqlJs({ locateFile: (f) => `/vendor/${f}` });
       const sqliteBytes = await getBinaryFile(token, ownerRepo, settings.sqlitePath, settings.branch);
       const db = sqliteBytes ? new SQL.Database(sqliteBytes) : new SQL.Database();
 
