@@ -34,7 +34,7 @@ export function Header() {
       .catch(() => {});
   }, [pathname]);
 
-  if (pathname === '/main') {
+  if (pathname?.startsWith('/main')) {
     return null;
   }
 

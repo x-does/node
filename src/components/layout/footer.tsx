@@ -16,7 +16,7 @@ const RESOURCE_LINKS = [{ label: 'Health Check', href: '/api/health' }];
 export function Footer() {
   const pathname = usePathname();
 
-  if (pathname === '/main') {
+  if (pathname?.startsWith('/main')) {
     return null;
   }
 
