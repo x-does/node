@@ -2,7 +2,7 @@
 
 import { marked } from 'marked';
 import initSqlJs from 'sql.js';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 
 type Repo = {
   id: number;
@@ -144,6 +144,14 @@ function urlSafeText(text: string) {
 
 const VIEW_SEQUENCE: ViewMode[] = ['split', 'edit', 'preview'];
 
+function toggleEditPreviewMode(current: ViewMode): ViewMode {
+  return current === 'preview' ? 'edit' : 'preview';
+}
+
+function cycleViewMode(current: ViewMode): ViewMode {
+  return VIEW_SEQUENCE[(VIEW_SEQUENCE.indexOf(current) + 1) % VIEW_SEQUENCE.length];
+}
+
 export default function BlogEditPage() {
   const [tab, setTab] = useState<Tab>('editor');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
@@ -169,9 +177,16 @@ export default function BlogEditPage() {
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const imagePickerRef = useRef<HTMLInputElement | null>(null);
 
+  const deferredMarkdown = useDeferredValue(markdown);
+
   const preview = useMemo(
-    () => ({ __html: marked.parse(preprocessMarkdownForPreview(markdown)) as string }),
-    [markdown],
+    () => ({
+      __html: marked.parse(preprocessMarkdownForPreview(deferredMarkdown), {
+        gfm: true,
+        breaks: true,
+      }) as string,
+    }),
+    [deferredMarkdown],
   );
 
   useEffect(() => {
@@ -205,23 +220,33 @@ export default function BlogEditPage() {
     }
 
     function onKey(e: KeyboardEvent) {
-      if (!e.ctrlKey || !e.shiftKey || e.repeat) return;
+      if (e.repeat || e.isComposing) return;
 
-      if (e.code === 'KeyF') {
+      if (e.key === 'Escape' && fullscreen) {
+        e.preventDefault();
+        setFullscreen(false);
+        return;
+      }
+
+      if (!e.ctrlKey || !e.shiftKey || e.metaKey || e.altKey) return;
+
+      const key = e.key.toLowerCase();
+
+      if (key === 'f') {
         e.preventDefault();
         setFullscreen((v) => !v);
         return;
       }
 
-      if (e.code === 'Enter') {
+      if (key === 'enter') {
         e.preventDefault();
-        setViewMode((v) => (v === 'preview' ? 'edit' : 'preview'));
+        setViewMode((v) => toggleEditPreviewMode(v));
         return;
       }
 
-      if (e.code === 'Backquote') {
+      if (key === '`') {
         e.preventDefault();
-        setViewMode((v) => VIEW_SEQUENCE[(VIEW_SEQUENCE.indexOf(v) + 1) % VIEW_SEQUENCE.length]);
+        setViewMode((v) => cycleViewMode(v));
       }
     }
 
@@ -231,7 +256,7 @@ export default function BlogEditPage() {
       window.removeEventListener('message', onMessage);
       window.removeEventListener('keydown', onKey);
     };
-  }, []);
+  }, [fullscreen]);
 
   function startAuth() {
     window.open('/api/blog-edit/auth/start', 'blogedit-auth', 'width=640,height=760');
@@ -488,20 +513,20 @@ export default function BlogEditPage() {
         </p>
 
         <div className="mt-5 flex flex-wrap gap-2">
-          <button onClick={() => setTab('editor')} className={btn(tab === 'editor')}>Editor</button>
-          <button onClick={() => setTab('posts')} className={btn(tab === 'posts')}>Posts</button>
-          <button onClick={() => setTab('settings')} className={btn(tab === 'settings')}>Settings</button>
+          <button type="button" onClick={() => setTab('editor')} className={btn(tab === 'editor')} aria-pressed={tab === 'editor'}>Editor</button>
+          <button type="button" onClick={() => setTab('posts')} className={btn(tab === 'posts')} aria-pressed={tab === 'posts'}>Posts</button>
+          <button type="button" onClick={() => setTab('settings')} className={btn(tab === 'settings')} aria-pressed={tab === 'settings'}>Settings</button>
         </div>
 
         <div className="mt-6 rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/55 p-4 text-sm text-[#c7bbdc]">
           <div>Auth user: <strong>{authedUser || 'not authenticated'}</strong></div>
           <div>Target: <strong>{settings.owner}/{settings.repo}</strong> @ <strong>{settings.branch}</strong></div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button onClick={startAuth} className={btn(false)} disabled={loading}>Auth with GitHub</button>
-            <button onClick={loadRepos} className={btn(false)} disabled={!token || loading}>Load writable repos</button>
-            <button onClick={loadPostsFromRepo} className={btn(false)} disabled={!token || loading}>Load posts from repo</button>
-            <button onClick={() => setFullscreen((v) => !v)} className={btn(false)} disabled={loading}>Toggle fullscreen</button>
-            <button onClick={() => { localStorage.removeItem(LS_TOKEN); setToken(''); setAuthedUser(''); setMsg('Logged out locally.'); }} className={btn(false)} disabled={loading}>Clear local token</button>
+            <button type="button" onClick={startAuth} className={btn(false)} disabled={loading}>Auth with GitHub</button>
+            <button type="button" onClick={loadRepos} className={btn(false)} disabled={!token || loading}>Load writable repos</button>
+            <button type="button" onClick={loadPostsFromRepo} className={btn(false)} disabled={!token || loading}>Load posts from repo</button>
+            <button type="button" onClick={() => setFullscreen((v) => !v)} className={btn(false)} disabled={loading} title="Ctrl+Shift+F">Toggle fullscreen</button>
+            <button type="button" onClick={() => { localStorage.removeItem(LS_TOKEN); setToken(''); setAuthedUser(''); setMsg('Logged out locally.'); }} className={btn(false)} disabled={loading}>Clear local token</button>
           </div>
           {msg ? <div className="mt-3 text-[#d8c9ef]">{msg}</div> : null}
         </div>
@@ -515,29 +540,30 @@ export default function BlogEditPage() {
             <input className={input} placeholder="Links (comma separated URLs)" value={links} onChange={(e) => setLinks(e.target.value)} />
 
             <div className="sticky top-3 z-10 flex flex-wrap gap-2 rounded-lg border border-[#7f6b9d]/25 bg-[#0d0a15]/95 p-2 text-xs backdrop-blur">
-              <button className={miniBtn} onClick={() => insertAtCursor('\n# Heading 1\n')}>H1</button>
-              <button className={miniBtn} onClick={() => insertAtCursor('\n## Heading 2\n')}>H2</button>
-              <button className={miniBtn} onClick={() => insertAtCursor('\n### Heading 3\n')}>H3</button>
-              <button className={miniBtn} onClick={() => wrapSelection('**', '**')}>Bold</button>
-              <button className={miniBtn} onClick={() => wrapSelection('_', '_')}>Italic</button>
-              <button className={miniBtn} onClick={() => wrapSelection('`', '`')}>Inline code</button>
-              <button className={miniBtn} onClick={() => insertAtCursor('\n```ts\nconsole.log("code block")\n```\n')}>Code block</button>
-              <button className={miniBtn} onClick={() => insertAtCursor('\n> Quote\n')}>Quote</button>
-              <button className={miniBtn} onClick={() => insertAtCursor('\n- List item\n- List item\n')}>UL</button>
-              <button className={miniBtn} onClick={() => insertAtCursor('\n1. First\n2. Second\n')}>OL</button>
-              <button className={miniBtn} onClick={() => insertAtCursor('\n- [ ] Task\n- [x] Done\n')}>Task list</button>
-              <button className={miniBtn} onClick={onInsertLink}>Link</button>
-              <button className={miniBtn} onClick={onInsertImageUrl}>Image URL</button>
-              <button className={miniBtn} onClick={() => imagePickerRef.current?.click()}>Image file</button>
-              <button className={miniBtn} onClick={onInsertYouTube}>YouTube</button>
-              <button className={miniBtn} onClick={onInsertRef}>@ref</button>
+              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n# Heading 1\n')}>H1</button>
+              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n## Heading 2\n')}>H2</button>
+              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n### Heading 3\n')}>H3</button>
+              <button type="button" className={miniBtn} onClick={() => wrapSelection('**', '**')}>Bold</button>
+              <button type="button" className={miniBtn} onClick={() => wrapSelection('_', '_')}>Italic</button>
+              <button type="button" className={miniBtn} onClick={() => wrapSelection('`', '`')}>Inline code</button>
+              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n```ts\nconsole.log("code block")\n```\n')}>Code block</button>
+              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n> Quote\n')}>Quote</button>
+              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n- List item\n- List item\n')}>UL</button>
+              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n1. First\n2. Second\n')}>OL</button>
+              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n- [ ] Task\n- [x] Done\n')}>Task list</button>
+              <button type="button" className={miniBtn} onClick={onInsertLink}>Link</button>
+              <button type="button" className={miniBtn} onClick={onInsertImageUrl}>Image URL</button>
+              <button type="button" className={miniBtn} onClick={() => imagePickerRef.current?.click()}>Image file</button>
+              <button type="button" className={miniBtn} onClick={onInsertYouTube}>YouTube</button>
+              <button type="button" className={miniBtn} onClick={onInsertRef}>@ref</button>
               <input ref={imagePickerRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickImage(f); e.currentTarget.value = ''; }} />
             </div>
 
             <div className="flex flex-wrap gap-2 text-sm">
-              <button className={btn(viewMode === 'split')} onClick={() => setViewMode('split')}>Split</button>
-              <button className={btn(viewMode === 'edit')} onClick={() => setViewMode('edit')}>Editor only</button>
-              <button className={btn(viewMode === 'preview')} onClick={() => setViewMode('preview')}>Preview only</button>
+              <button type="button" className={btn(viewMode === 'split')} onClick={() => setViewMode('split')} aria-pressed={viewMode === 'split'}>Split</button>
+              <button type="button" className={btn(viewMode === 'edit')} onClick={() => setViewMode('edit')} aria-pressed={viewMode === 'edit'}>Editor only</button>
+              <button type="button" className={btn(viewMode === 'preview')} onClick={() => setViewMode('preview')} aria-pressed={viewMode === 'preview'}>Preview only</button>
+              <span className="ml-1 text-xs text-[#aa9ac5]">Ctrl+Shift+Enter toggles edit/preview · Ctrl+Shift+` cycles 3-view</span>
             </div>
 
             <div className={viewMode === 'split' ? 'grid gap-3 md:grid-cols-2' : 'grid gap-3'}>
@@ -549,7 +575,7 @@ export default function BlogEditPage() {
               ) : null}
             </div>
 
-            <button onClick={publish} className={btn(false)} disabled={!token || loading}>Publish to selected repo</button>
+            <button type="button" onClick={publish} className={btn(false)} disabled={!token || loading}>Publish to selected repo</button>
           </div>
         )}
 

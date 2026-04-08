@@ -26,7 +26,8 @@ export default function MainPage() {
         </h1>
       </div>
 
-      <nav aria-label="Main sections" className="w-full md:w-[24rem]">
+      <nav aria-label="Main sections" className="w-full md:w-[26rem]">
+        <p className="mb-3 text-xs uppercase tracking-[0.16em] text-[#a896c4]">Fast paths: main surface, blog browsing, and editor workflow.</p>
         <ul className="space-y-2">
           {MENU.map((item) => (
             <li key={item.label}>
@@ -35,7 +36,7 @@ export default function MainPage() {
                   href={item.href}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex w-full items-center justify-between rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 px-4 py-3 text-left text-lg text-[#e7dcff] transition hover:border-[#a58ac8]/60 hover:bg-[#1b1429]"
+                  className="flex w-full items-center justify-between rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 px-4 py-3 text-left text-lg text-[#e7dcff] transition hover:border-[#a58ac8]/60 hover:bg-[#1b1429] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a58ac8]/60"
                 >
                   <span>{item.label}</span>
                   <span className="text-xs uppercase tracking-[0.18em] text-[#b9a6d8]">open ↗</span>
@@ -43,7 +44,7 @@ export default function MainPage() {
               ) : (
                 <Link
                   href={item.href}
-                  className="flex w-full items-center justify-between rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 px-4 py-3 text-left text-lg text-[#e7dcff] transition hover:border-[#a58ac8]/60 hover:bg-[#1b1429]"
+                  className="flex w-full items-center justify-between rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 px-4 py-3 text-left text-lg text-[#e7dcff] transition hover:border-[#a58ac8]/60 hover:bg-[#1b1429] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#a58ac8]/60"
                 >
                   <span>{item.label}</span>
                   <span className="text-xs uppercase tracking-[0.18em] text-[#b9a6d8]">open</span>

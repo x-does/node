@@ -37,17 +37,18 @@ export default async function MainBlogPage({ searchParams }: { searchParams: Sea
         </div>
       </div>
 
-      <form method="GET" className="mt-6 flex max-w-2xl gap-2">
+      <form method="GET" className="mt-6 flex max-w-2xl gap-2" role="search" aria-label="Search indexed blog posts">
         <input
           name="q"
           defaultValue={q}
           placeholder="Search title, tags, refs, links..."
-          className="w-full rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/45 px-3 py-2 text-[#efe8ff] outline-none"
+          autoComplete="off"
+          className="w-full rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/45 px-3 py-2 text-[#efe8ff] outline-none focus-visible:ring-2 focus-visible:ring-[#a58ac8]/60"
         />
-        <button className="rounded-lg border border-[#7f6b9d]/25 bg-[#1a1328] px-4 py-2 text-[#efe8ff]">Search</button>
+        <button type="submit" className="rounded-lg border border-[#7f6b9d]/25 bg-[#1a1328] px-4 py-2 text-[#efe8ff] hover:border-[#a58ac8]/60">Search</button>
       </form>
 
-      <p className="mt-3 text-xs uppercase tracking-[0.16em] text-[#a796c3]">{posts.length} post{posts.length === 1 ? '' : 's'} indexed</p>
+      <p className="mt-3 text-xs uppercase tracking-[0.16em] text-[#a796c3]">{posts.length} post{posts.length === 1 ? '' : 's'} indexed · use @refs in editor to cross-link posts</p>
 
       <div className="mt-7 grid gap-3">
         {posts.length === 0 ? (
