@@ -10,7 +10,23 @@ export const metadata: Metadata = {
   description: 'Tracked audit intake for revenue loops, automation leaks, and growth blockers.',
 };
 
+const DEPOSIT_EMAIL = 'hello@xdoes.space';
+const DEPOSIT_SUBJECT = 'Node Revenue Audit deposit handoff';
+const DEPOSIT_BODY = [
+  'Hi Sav,',
+  '',
+  'I want the Node Revenue Audit deposit handoff.',
+  'Please send the invoice / payment details for the €375 deposit.',
+  '',
+  'Reply with go and the invoice-ready details, and I will move forward.',
+].join('\n');
+
 export default function AuditPage() {
+  const depositMailto = `mailto:${DEPOSIT_EMAIL}?${new URLSearchParams({
+    subject: DEPOSIT_SUBJECT,
+    body: DEPOSIT_BODY,
+  }).toString()}`;
+
   return (
     <div className="flex min-h-[80vh] items-center justify-center px-4 py-16">
       <div className="w-full max-w-2xl rounded-2xl border border-border-bright bg-surface-overlay p-7 shadow-2xl shadow-black/30">
@@ -31,29 +47,30 @@ export default function AuditPage() {
           </h2>
           <p className="mt-2 text-sm leading-relaxed text-muted">
             Fixed-scope follow-up: <strong className="text-foreground">€750 total</strong>, with a
-            <strong className="text-foreground"> €375 deposit</strong> to reserve the slot. I do not
-            begin bespoke scoping until the deposit is in.
+            <strong className="text-foreground"> €375 deposit</strong> to reserve the slot. I do
+            not begin bespoke scoping until the deposit is in.
           </p>
           <p className="mt-2 text-sm leading-relaxed text-muted">
-            Turnaround is <strong className="text-foreground">5 business days</strong> after deposit.
-            If the review surfaces implementation work, I will quote that separately.
+            Turnaround is <strong className="text-foreground">5 business days</strong> after
+            deposit. If the review surfaces implementation work, I will quote that separately.
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <a
-              href={buildAuditClickHref('audit_page_primary', AUDIT_EVENT_KEY)}
+              href={depositMailto}
               className="inline-flex items-center rounded-xl bg-gradient-to-br from-accent-bright to-accent px-5 py-3 text-sm font-bold text-[#081122] shadow-lg shadow-accent/20 transition-all hover:brightness-110"
             >
-              Request the deposit details
+              Request the deposit handoff
             </a>
             <a
               href={buildAuditClickHref('audit_page_secondary', AUDIT_EVENT_KEY)}
               className="inline-flex items-center rounded-xl border border-border-bright bg-surface px-5 py-3 text-sm font-semibold text-foreground transition-all hover:bg-surface-raised"
             >
-              Fallback audit link
+              Open the tracked audit link
             </a>
           </div>
           <p className="mt-3 text-xs text-subtle">
-            Reply with <code className="text-accent-bright">go</code> to receive the deposit handoff.
+            Email <code className="text-accent-bright">{DEPOSIT_EMAIL}</code> or reply with{' '}
+            <code className="text-accent-bright">go</code> to receive the invoice-ready handoff.
           </p>
         </div>
 

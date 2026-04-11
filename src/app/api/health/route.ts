@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { ROOT_PARITY_MARKER, AUDIT_EVENT_KEY } from '@/lib/audit-config';
+import { ROOT_PARITY_MARKER } from '@/lib/audit-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -21,7 +21,6 @@ export async function GET(request: NextRequest) {
         },
         timestamp,
         parityMarker: ROOT_PARITY_MARKER,
-        auditEventKey: AUDIT_EVENT_KEY,
       },
       {
         headers: {
@@ -47,7 +46,6 @@ export async function GET(request: NextRequest) {
         },
         timestamp,
         parityMarker: ROOT_PARITY_MARKER,
-        auditEventKey: AUDIT_EVENT_KEY,
       },
       {
         headers: {
@@ -67,7 +65,6 @@ export async function GET(request: NextRequest) {
         database: { checked: true, connected: false, error: 'connection_failed' },
         timestamp,
         parityMarker: ROOT_PARITY_MARKER,
-        auditEventKey: AUDIT_EVENT_KEY,
       },
       { status: 500, headers: { 'Cache-Control': 'no-store' } },
     );
