@@ -24,7 +24,6 @@ export default function MainPage() {
       </div>
 
       <nav aria-label="Main sections" className="w-full md:w-[26rem]">
-        <p className="mb-3 text-xs uppercase tracking-[0.16em] text-[#a896c4]">Fast paths: main surface, blog browsing, and editor workflow.</p>
         <ul className="space-y-2">
           {MENU.map((item) => (
             <li key={item.label}>
