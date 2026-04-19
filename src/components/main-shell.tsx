@@ -1,13 +1,20 @@
 import Link from 'next/link';
 
-const MENU = [
+type MenuItem = {
+  label: string;
+  href?: string;
+  external?: boolean;
+  disabled?: boolean;
+};
+
+const MENU: MenuItem[] = [
   { label: 'Home', href: '/' },
-  { label: 'Interactive/apps', href: '/interactive-apps' },
+  { label: 'Interactive/apps', disabled: true },
   { label: 'Youtube', href: 'https://youtube.com/@x-does', external: true },
   { label: 'Blog', href: '/blog' },
-  { label: 'Blog editor', href: '/blog-edit' },
-  { label: 'XD License', href: '/xd-license' },
-  { label: 'Sponsors', href: '/sponsors' },
+  { label: 'Blog editor', disabled: true },
+  { label: 'XD License', disabled: true },
+  { label: 'Sponsors', disabled: true },
 ];
 
 const SOCIALS = [
@@ -15,6 +22,13 @@ const SOCIALS = [
   { label: 'github', href: 'https://github.com/x-does' },
   { label: 'youtube', href: 'https://youtube.com/@x-does' },
 ];
+
+const basePillClassName =
+  'rounded-full border px-3 py-1.5 text-sm transition-colors';
+const activePillClassName =
+  `${basePillClassName} border-[#7f6b9d]/20 text-[#c8bcdd] hover:border-[#a58ac8]/45 hover:text-white`;
+const disabledPillClassName =
+  `${basePillClassName} inline-flex cursor-not-allowed items-center gap-2 border-[#7f6b9d]/12 text-[#8f82a8] opacity-75`;
 
 export function MainShell({ children }: { children: React.ReactNode }) {
   return (
@@ -24,32 +38,47 @@ export function MainShell({ children }: { children: React.ReactNode }) {
       <div className="relative mx-auto flex min-h-screen w-full max-w-6xl flex-col px-6 py-8 sm:px-10 sm:py-10">
         <main className="flex-1">{children}</main>
 
-        <footer className="mt-8 space-y-4 border-t border-[#7f6b9d]/20 pt-4">
-          <nav className="flex flex-wrap gap-2 text-sm text-[#c8bcdd]">
-            {MENU.map((item) => (
-              item.external ? (
-                <a
-                  key={item.label}
-                  href={item.href}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="rounded-full border border-[#7f6b9d]/20 px-3 py-1.5 text-[#c8bcdd] hover:border-[#a58ac8]/45 hover:text-white"
-                >
-                  {item.label}
-                </a>
-              ) : (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  className="rounded-full border border-[#7f6b9d]/20 px-3 py-1.5 text-[#c8bcdd] hover:border-[#a58ac8]/45 hover:text-white"
-                >
+        <footer className="mt-8 flex flex-col items-end space-y-4 border-t border-[#7f6b9d]/20 pt-4 text-right">
+          <nav className="flex flex-wrap justify-end gap-2 text-sm text-[#c8bcdd]">
+            {MENU.map((item) => {
+              if (item.disabled) {
+                return (
+                  <span
+                    key={item.label}
+                    aria-disabled="true"
+                    title="Coming soon"
+                    className={disabledPillClassName}
+                  >
+                    <span aria-hidden="true">◌</span>
+                    <span>{item.label}</span>
+                    <span className="text-[10px] uppercase tracking-[0.22em] text-[#aa9ac5]">Soon</span>
+                  </span>
+                );
+              }
+
+              if (item.external) {
+                return (
+                  <a
+                    key={item.label}
+                    href={item.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={activePillClassName}
+                  >
+                    {item.label}
+                  </a>
+                );
+              }
+
+              return (
+                <Link key={item.label} href={item.href!} className={activePillClassName}>
                   {item.label}
                 </Link>
-              )
-            ))}
+              );
+            })}
           </nav>
 
-          <div className="flex flex-wrap gap-3 text-xs lowercase text-[#ac9cc4]">
+          <div className="flex flex-wrap justify-end gap-3 text-xs lowercase text-[#ac9cc4]">
             {SOCIALS.map((s) => (
               <a key={s.label} href={s.href} target="_blank" rel="noreferrer" className="hover:text-white">
                 {s.label}
