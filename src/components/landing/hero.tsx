@@ -23,7 +23,7 @@ export function Hero() {
           <p className="mt-5 max-w-2xl text-lg leading-relaxed text-muted">
             node.xdoes.space is the public face of the build team: a place to show what we sell,
             what we are making next, and what we release for free to earn attention, trust, and
-            revenue.
+            revenue. Live proof marker: repo access verified.
           </p>
           <div className="mt-7 flex flex-wrap gap-3">
             <Link
