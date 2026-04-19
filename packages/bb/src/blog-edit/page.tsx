@@ -3,6 +3,7 @@
 import { marked } from 'marked';
 import initSqlJs from 'sql.js';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { describePublishTarget, getSettingsForSelectedRepo, parseRepositoryInput } from './repo-connection';
 
 type Repo = {
   id: number;
@@ -165,6 +166,7 @@ export default function BlogEditApp() {
   const [authedUser, setAuthedUser] = useState('');
   const [repos, setRepos] = useState<Repo[]>([]);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
+  const [repoLocator, setRepoLocator] = useState(`${defaultSettings.owner}/${defaultSettings.repo}`);
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -212,6 +214,10 @@ export default function BlogEditApp() {
   useEffect(() => {
     localStorage.setItem(LS_SETTINGS, JSON.stringify(settings));
   }, [settings]);
+
+  useEffect(() => {
+    setRepoLocator(`${settings.owner}/${settings.repo}`);
+  }, [settings.owner, settings.repo]);
 
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
@@ -359,15 +365,15 @@ export default function BlogEditApp() {
     }
   }
 
-  async function loadPostsFromRepo() {
+  async function loadPostsFromRepo(target = settings) {
     if (!token) return;
     setLoading(true);
     setMsg('');
 
     try {
-      const ownerRepo = `${settings.owner}/${settings.repo}`;
+      const ownerRepo = `${target.owner}/${target.repo}`;
       const SQL = await loadSqlEngine();
-      const sqliteBytes = await getBinaryFile(token, ownerRepo, settings.sqlitePath, settings.branch);
+      const sqliteBytes = await getBinaryFile(token, ownerRepo, target.sqlitePath, target.branch);
 
       if (!sqliteBytes) {
         setPosts([]);
@@ -385,7 +391,7 @@ export default function BlogEditApp() {
       db.close();
 
       setPosts(items);
-      setMsg(`Loaded ${items.length} posts from ${ownerRepo}/${settings.sqlitePath}`);
+      setMsg(`Loaded ${items.length} posts from ${ownerRepo}/${target.sqlitePath}`);
     } catch (e) {
       setMsg(`❌ ${e instanceof Error ? e.message : 'failed to load posts'}`);
     } finally {
@@ -395,21 +401,27 @@ export default function BlogEditApp() {
 
   function applySelectedRepo(full: string, shouldLoadPosts = false) {
     if (!full) return;
-    const [owner, repo] = full.split('/');
     const selected = repos.find((r) => r.full_name === full);
-    setSettings((s) => ({
-      ...s,
-      owner,
-      repo,
-      branch: selected?.default_branch || s.branch,
-    }));
+    const nextSettings = getSettingsForSelectedRepo(settings, full, selected);
+    setSettings(nextSettings);
     setTab('editor');
     setMsg(`Connected editor to ${full}${selected?.default_branch ? ` on ${selected.default_branch}` : ''}.`);
     if (shouldLoadPosts) {
-      window.setTimeout(() => {
-        void loadPostsFromRepo();
-      }, 0);
+      void loadPostsFromRepo(nextSettings);
     }
+  }
+
+  function applyRepoLocator() {
+    const parsed = parseRepositoryInput(repoLocator);
+    if (!parsed) {
+      setMsg('Enter owner/repo or a full GitHub repo URL.');
+      setTab('settings');
+      return;
+    }
+
+    setSettings((s) => ({ ...s, owner: parsed.owner, repo: parsed.repo }));
+    setTab('editor');
+    setMsg(`Connected editor to ${parsed.owner}/${parsed.repo}.`);
   }
 
   async function publish() {
@@ -529,6 +541,10 @@ export default function BlogEditApp() {
 
   const showEditor = viewMode === 'split' || viewMode === 'edit';
   const showPreview = viewMode === 'split' || viewMode === 'preview';
+  const publishTarget = describePublishTarget({
+    ...settings,
+    slug: toSlug(title) || 'draft-post',
+  });
 
   return (
     <div className={fullscreen ? 'fixed inset-0 z-50 overflow-auto bg-[#07060c] p-6' : ''}>
@@ -557,14 +573,32 @@ export default function BlogEditApp() {
               {repos.length > 0 ? `${filteredRepos.length}/${repos.length} writable repos visible` : 'load repos to browse targets'}
             </span>
           </div>
-          <div className="mt-1">Target: <strong>{settings.owner}/{settings.repo}</strong> @ <strong>{settings.branch}</strong></div>
+          <div className="mt-1">Target: <strong>{publishTarget.ownerRepo}</strong> @ <strong>{publishTarget.branchLabel}</strong></div>
           <div className="mt-2 text-xs text-[#aa9ac5]">
-            Connect flow: GitHub auth → load writable repos → choose a repo → publish. You can still manually override owner, repo, branch, base dir, and sqlite path in Settings.
+            Connect flow: GitHub auth → choose or paste a repo → verify the target preview → publish.
+          </div>
+          <div className="mt-3 grid gap-2 rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3 text-xs text-[#cdbfe4] md:grid-cols-2">
+            <div>
+              <div className="text-[#9c8db7]">Repo</div>
+              <div className="font-medium text-[#efe8ff]">{publishTarget.ownerRepo}</div>
+            </div>
+            <div>
+              <div className="text-[#9c8db7]">Branch</div>
+              <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
+            </div>
+            <div>
+              <div className="text-[#9c8db7]">SQLite index</div>
+              <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
+            </div>
+            <div>
+              <div className="text-[#9c8db7]">Next post file</div>
+              <div className="font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
+            </div>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={startAuth} className={btn(false)} disabled={loading}>{token ? 'Re-auth with GitHub' : 'Connect GitHub'}</button>
             <button type="button" onClick={loadRepos} className={btn(false)} disabled={!token || loading}>Load writable repos</button>
-            <button type="button" onClick={loadPostsFromRepo} className={btn(false)} disabled={!token || loading}>Load posts from selected repo</button>
+            <button type="button" onClick={() => void loadPostsFromRepo()} className={btn(false)} disabled={!token || loading}>Load posts from selected repo</button>
             <button type="button" onClick={() => setTab('settings')} className={btn(tab === 'settings')} disabled={loading}>Repo settings</button>
             <button type="button" onClick={() => setFullscreen((v) => !v)} className={btn(false)} disabled={loading} title="Ctrl+Shift+F">Toggle fullscreen</button>
             <button type="button" onClick={() => { localStorage.removeItem(LS_TOKEN); setToken(''); setAuthedUser(''); setRepos([]); setRepoQuery(''); setMsg('Logged out locally.'); }} className={btn(false)} disabled={loading}>Clear local token</button>
@@ -575,7 +609,7 @@ export default function BlogEditApp() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <div className="text-sm font-semibold text-[#efe8ff]">Connect to a repository</div>
-                  <div className="text-xs text-[#aa9ac5]">Pick any writable repo to retarget the editor instantly.</div>
+                  <div className="text-xs text-[#aa9ac5]">Pick a writable repo here, or paste one in Settings if it is not listed yet.</div>
                 </div>
                 <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
               </div>
@@ -688,13 +722,50 @@ export default function BlogEditApp() {
           <div className="mt-6 grid gap-3">
             <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-3 text-sm text-[#c7bbdc]">
               <div className="font-semibold text-[#efe8ff]">Repository connection settings</div>
-              <div className="mt-1 text-xs text-[#aa9ac5]">These defaults make it easy to point the editor at a new repo without changing code.</div>
+              <div className="mt-1 text-xs text-[#aa9ac5]">Paste owner/repo or a GitHub URL, then confirm the target preview before publishing.</div>
+            </div>
+            <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-3 text-sm text-[#c7bbdc]">
+              <label className={label}>
+                Repository locator
+                <input
+                  className={input}
+                  value={repoLocator}
+                  onChange={(e) => setRepoLocator(e.target.value)}
+                  placeholder="x-does/blog or https://github.com/x-does/blog"
+                />
+              </label>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button type="button" className={btn(false)} onClick={applyRepoLocator}>Apply repo locator</button>
+                <span className="text-xs text-[#aa9ac5]">Branch, base dir, and sqlite path stay as-is.</span>
+              </div>
             </div>
             <label className={label}>Owner<input className={input} value={settings.owner} onChange={(e) => setSettings((s) => ({ ...s, owner: e.target.value.trim() }))} /></label>
             <label className={label}>Repo<input className={input} value={settings.repo} onChange={(e) => setSettings((s) => ({ ...s, repo: e.target.value.trim() }))} /></label>
             <label className={label}>Branch<input className={input} value={settings.branch} onChange={(e) => setSettings((s) => ({ ...s, branch: e.target.value.trim() }))} /></label>
             <label className={label}>Blogs base directory<input className={input} value={settings.baseDir} onChange={(e) => setSettings((s) => ({ ...s, baseDir: e.target.value.trim() }))} /></label>
             <label className={label}>SQLite path<input className={input} value={settings.sqlitePath} onChange={(e) => setSettings((s) => ({ ...s, sqlitePath: e.target.value.trim() }))} /></label>
+            <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3 text-xs text-[#cdbfe4]">
+              <div className="font-semibold text-[#efe8ff]">Publish target preview</div>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <div>
+                  <div className="text-[#9c8db7]">Repo</div>
+                  <div>{publishTarget.ownerRepo}</div>
+                </div>
+                <div>
+                  <div className="text-[#9c8db7]">Branch</div>
+                  <div>{publishTarget.branchLabel}</div>
+                </div>
+                <div>
+                  <div className="text-[#9c8db7]">SQLite index</div>
+                  <div>{publishTarget.sqliteLabel}</div>
+                </div>
+                <div>
+                  <div className="text-[#9c8db7]">Next post file</div>
+                  <div>{publishTarget.postPath}</div>
+                </div>
+              </div>
+              <div className="mt-2 text-[#aa9ac5]">Flow: auth → choose repo → verify target → publish.</div>
+            </div>
 
             {repos.length > 0 && (
               <div className="rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/45 p-3">
