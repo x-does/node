@@ -16,6 +16,8 @@ const nextConfig: NextConfig = {
     return [
       { source: '/', headers: noCacheHeaders },
       { source: '/audit', headers: noCacheHeaders },
+      { source: '/main', headers: noCacheHeaders },
+      { source: '/main/:path*', headers: noCacheHeaders },
       { source: '/api/audit-click', headers: noCacheHeaders },
       { source: '/api/audit-metrics', headers: noCacheHeaders },
     ];
