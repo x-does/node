@@ -7,7 +7,7 @@ type MenuItem = {
   disabled?: boolean;
 };
 
-const MENU: MenuItem[] = [
+export const MENU: MenuItem[] = [
   { label: 'Home', href: '/' },
   { label: 'Interactive/apps', disabled: true },
   { label: 'Youtube', href: 'https://youtube.com/@x-does', external: true },
@@ -30,6 +30,44 @@ const activePillClassName =
 const disabledPillClassName =
   `${basePillClassName} inline-flex cursor-not-allowed items-center gap-2 border-[#7f6b9d]/12 text-[#8f82a8] opacity-75`;
 
+export function InlineMenu() {
+  return (
+    <nav className="text-sm leading-7 text-[#c8bcdd]">
+      <div className="flex flex-wrap gap-x-4 gap-y-1">
+        {MENU.map((item) => {
+          if (item.disabled) {
+            return (
+              <span key={item.label} aria-disabled="true" className="text-[#8f82a8]">
+                {item.label} Soon
+              </span>
+            );
+          }
+
+          if (item.external) {
+            return (
+              <a
+                key={item.label}
+                href={item.href}
+                target="_blank"
+                rel="noreferrer"
+                className="transition-colors hover:text-white"
+              >
+                {item.label}
+              </a>
+            );
+          }
+
+          return (
+            <Link key={item.label} href={item.href!} className="transition-colors hover:text-white">
+              {item.label}
+            </Link>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
 export function MainShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="relative min-h-screen bg-[#07060b] text-[#efeafc]">
@@ -39,45 +77,6 @@ export function MainShell({ children }: { children: React.ReactNode }) {
         <main className="flex-1">{children}</main>
 
         <footer className="mt-8 flex flex-col items-end space-y-4 border-t border-[#7f6b9d]/20 pt-4 text-right">
-          <nav className="flex flex-wrap justify-end gap-2 text-sm text-[#c8bcdd]">
-            {MENU.map((item) => {
-              if (item.disabled) {
-                return (
-                  <span
-                    key={item.label}
-                    aria-disabled="true"
-                    title="Coming soon"
-                    className={disabledPillClassName}
-                  >
-                    <span aria-hidden="true">◌</span>
-                    <span>{item.label}</span>
-                    <span className="text-[10px] uppercase tracking-[0.22em] text-[#aa9ac5]">Soon</span>
-                  </span>
-                );
-              }
-
-              if (item.external) {
-                return (
-                  <a
-                    key={item.label}
-                    href={item.href}
-                    target="_blank"
-                    rel="noreferrer"
-                    className={activePillClassName}
-                  >
-                    {item.label}
-                  </a>
-                );
-              }
-
-              return (
-                <Link key={item.label} href={item.href!} className={activePillClassName}>
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-
           <div className="flex flex-wrap justify-end gap-3 text-xs lowercase text-[#ac9cc4]">
             {SOCIALS.map((s) => (
               <a key={s.label} href={s.href} target="_blank" rel="noreferrer" className="hover:text-white">
