@@ -1,5 +1,5 @@
 import { redirect } from 'next/navigation';
 
-export default function MainBlogEditCompatPage() {
+export default function BlogEditorPage() {
   redirect('/blog-edit');
 }

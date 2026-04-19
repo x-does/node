@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-const PROTECTED_PATHS = ['/dashboard'];
+const PROTECTED_PATHS: string[] = [];
 
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;

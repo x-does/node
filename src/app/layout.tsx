@@ -1,8 +1,6 @@
 import type { Metadata } from 'next';
 import { Inter, Space_Grotesk } from 'next/font/google';
-import { Header } from '@/components/layout/header';
-import { Footer } from '@/components/layout/footer';
-import { TrackPageView } from '@/components/tracking/track-page-view';
+import { MainShell } from '@/components/main-shell';
 import './globals.css';
 
 const inter = Inter({
@@ -19,10 +17,10 @@ const spaceGrotesk = Space_Grotesk({
 
 export const metadata: Metadata = {
   title: {
-    default: 'node.xdoes.space',
-    template: '%s | node.xdoes.space',
+    default: 'X Does',
+    template: '%s | X Does',
   },
-  description: 'Services, products, and free releases from the build team.',
+  description: 'Main portal for xdoes.',
   metadataBase: new URL('https://node.xdoes.space'),
 };
 
@@ -30,10 +28,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${inter.variable} ${spaceGrotesk.variable}`}>
       <body className="bg-background font-sans text-foreground antialiased">
-        <Header />
-        <main className="min-h-screen">{children}</main>
-        <Footer />
-        <TrackPageView />
+        <MainShell>{children}</MainShell>
       </body>
     </html>
   );

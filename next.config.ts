@@ -15,7 +15,13 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       { source: '/', headers: noCacheHeaders },
-      { source: '/audit', headers: noCacheHeaders },
+      { source: '/blog', headers: noCacheHeaders },
+      { source: '/blog/:path*', headers: noCacheHeaders },
+      { source: '/blog-edit', headers: noCacheHeaders },
+      { source: '/blog-editor', headers: noCacheHeaders },
+      { source: '/interactive-apps', headers: noCacheHeaders },
+      { source: '/sponsors', headers: noCacheHeaders },
+      { source: '/xd-license', headers: noCacheHeaders },
       { source: '/main', headers: noCacheHeaders },
       { source: '/main/:path*', headers: noCacheHeaders },
       { source: '/api/audit-click', headers: noCacheHeaders },
