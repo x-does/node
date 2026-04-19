@@ -17,11 +17,7 @@ export default function HomePage() {
       </div>
 
       <div className="w-full rounded-2xl border border-[#7f6b9d]/18 bg-[#0f0c17]/40 p-6 text-[#cfc3e6] md:w-[26rem]">
-        <p className="text-sm leading-7">
-          X Does is now served directly from the root of node.xdoes.space. Use the navigation below to open the blog, editor, license, sponsors, and upcoming interactive app surfaces.
-        </p>
-
-        <div className="mt-4 border-t border-[#7f6b9d]/18 pt-4">
+        <div className="text-sm leading-7">
           <InlineMenu />
         </div>
       </div>

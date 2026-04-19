@@ -33,7 +33,7 @@ const disabledPillClassName =
 export function InlineMenu() {
   return (
     <nav className="text-sm leading-7 text-[#c8bcdd]">
-      <div className="flex flex-wrap gap-x-4 gap-y-1">
+      <div className="flex flex-col items-start gap-y-1">
         {MENU.map((item) => {
           if (item.disabled) {
             return (
