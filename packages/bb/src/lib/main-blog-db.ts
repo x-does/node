@@ -33,6 +33,17 @@ function existingLocalSqlitePath() {
   return candidateLocalSqlitePaths().find((file) => fs.existsSync(file)) || null;
 }
 
+function latestCachedTempSqlitePath() {
+  const files = fs
+    .readdirSync(os.tmpdir(), { withFileTypes: true })
+    .filter((entry) => entry.isFile() && /^xdoes-blog-.*\.sqlite$/.test(entry.name))
+    .map((entry) => path.join(os.tmpdir(), entry.name))
+    .map((file) => ({ file, mtimeMs: fs.statSync(file).mtimeMs }))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  return files[0]?.file || null;
+}
+
 async function fetchRemoteSqliteToTempFile() {
   const token = process.env.GITHUB_PAT || process.env.GITHUB_TOKEN;
 
@@ -119,8 +130,15 @@ export async function loadMainBlogPosts(query?: string, limit = 50): Promise<Mai
   const localFile = existingLocalSqlitePath();
   if (localFile) return queryPosts(localFile, query, limit);
 
-  const remoteFile = await fetchRemoteSqliteToTempFile();
-  if (remoteFile) return queryPosts(remoteFile, query, limit);
+  try {
+    const remoteFile = await fetchRemoteSqliteToTempFile();
+    if (remoteFile) return queryPosts(remoteFile, query, limit);
+  } catch (error) {
+    console.warn('[main-blog-db] remote sqlite fetch failed; falling back to latest cached temp sqlite if available', error);
+  }
+
+  const cachedFile = latestCachedTempSqlitePath();
+  if (cachedFile) return queryPosts(cachedFile, query, limit);
 
   return [];
 }
