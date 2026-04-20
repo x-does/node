@@ -64,40 +64,49 @@ function usableGitHubToken() {
   return token;
 }
 
-async function fetchRemoteSqliteToTempFile() {
+async function fetchGitHubContents(relativePath: string) {
   const token = usableGitHubToken();
-
   const repo = configuredGitHubRepo();
   const branch = configuredBranch();
-  const sqlitePath = configuredSqlitePath();
-  const encodedPath = sqlitePath.split('/').map(encodeURIComponent).join('/');
+  const encodedPath = relativePath.split('/').map(encodeURIComponent).join('/');
   const url = `https://api.github.com/repos/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`;
-  const headers: Record<string, string> = {
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'xdoes-node-blog-loader',
+
+  const request = async (authToken?: string | null) => {
+    const headers: Record<string, string> = {
+      Accept: 'application/vnd.github+json',
+      'X-GitHub-Api-Version': '2022-11-28',
+      'User-Agent': 'xdoes-node-blog-loader',
+    };
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+    return fetch(url, { headers, cache: 'no-store' });
   };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+
+  let res = await request(token);
+  if (!res.ok && token) {
+    res = await request(null);
   }
-  const res = await fetch(url, {
-    headers,
-    cache: 'no-store',
-  });
 
   if (res.status === 404) return null;
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`GitHub blog sqlite fetch failed (${res.status}): ${text}`);
+    throw new Error(`GitHub contents fetch failed for ${relativePath} (${res.status}): ${text}`);
   }
 
-  const payload = (await res.json()) as { content?: string; encoding?: string; sha?: string };
-  if (!payload.content || payload.encoding !== 'base64') {
+  return (await res.json()) as { content?: string; encoding?: string; sha?: string };
+}
+
+async function fetchRemoteSqliteToTempFile() {
+  const sqlitePath = configuredSqlitePath();
+  const payload = await fetchGitHubContents(sqlitePath);
+  if (!payload) return null;
+
+  const payloadWithSha = payload as { content?: string; encoding?: string; sha?: string };
+  if (!payloadWithSha.content || payloadWithSha.encoding !== 'base64') {
     throw new Error('GitHub blog sqlite response did not include base64 content.');
   }
 
-  const bytes = Buffer.from(payload.content.replace(/\n/g, ''), 'base64');
-  const sha = payload.sha || crypto.createHash('sha1').update(bytes).digest('hex');
+  const bytes = Buffer.from(payloadWithSha.content.replace(/\n/g, ''), 'base64');
+  const sha = payloadWithSha.sha || crypto.createHash('sha1').update(bytes).digest('hex');
   const file = path.join(os.tmpdir(), `xdoes-blog-${sha}.sqlite`);
   if (!fs.existsSync(file)) {
     fs.writeFileSync(file, bytes);
@@ -182,32 +191,8 @@ export async function loadMainBlogMarkdown(row: Pick<MainBlogRow, 'folder' | 'fi
     }
   }
 
-  const token = usableGitHubToken();
-  const repo = configuredGitHubRepo();
-  const branch = configuredBranch();
-  const encodedPath = relativePath.split('/').map(encodeURIComponent).join('/');
-  const url = `https://api.github.com/repos/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`;
-  const headers: Record<string, string> = {
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28',
-    'User-Agent': 'xdoes-node-blog-loader',
-  };
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-
-  const res = await fetch(url, {
-    headers,
-    cache: 'no-store',
-  });
-
-  if (res.status === 404) return null;
-  if (!res.ok) {
-    const text = await res.text();
-    throw new Error(`GitHub blog markdown fetch failed (${res.status}): ${text}`);
-  }
-
-  const payload = (await res.json()) as { content?: string; encoding?: string };
+  const payload = await fetchGitHubContents(relativePath);
+  if (!payload) return null;
   if (!payload.content || payload.encoding !== 'base64') {
     throw new Error('GitHub blog markdown response did not include base64 content.');
   }
