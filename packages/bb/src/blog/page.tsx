@@ -18,7 +18,7 @@ function splitCsv(input: string) {
 export async function BlogPage({ searchParams }: { searchParams: SearchParams }) {
   const sp = await searchParams;
   const q = (sp.q || '').trim();
-  const posts = loadMainBlogPosts(q, 100);
+  const posts = await loadMainBlogPosts(q, 100);
 
   return (
     <section className="py-10">
