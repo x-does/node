@@ -3,7 +3,7 @@
 import { marked } from 'marked';
 import initSqlJs from 'sql.js';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import { isGitHubApiNotFoundError } from './github-api';
+import { isGitHubApiConflictError, isGitHubApiNotFoundError } from './github-api';
 import { describePublishTarget, getSettingsForSelectedRepo, parseRepositoryInput } from './repo-connection';
 
 type Repo = {
@@ -65,6 +65,10 @@ function getApiBase(ownerRepo: string) {
   return `https://api.github.com/repos/${ownerRepo}`;
 }
 
+function encodeGitHubContentPath(contentPath: string) {
+  return contentPath.split('/').map(encodeURIComponent).join('/');
+}
+
 async function gh<T>(token: string, url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(url, {
     ...init,
@@ -105,7 +109,7 @@ async function getBinaryFile(token: string, ownerRepo: string, path: string, bra
   try {
     const data = await gh<{ content?: string; encoding?: string }>(
       token,
-      `${getApiBase(ownerRepo)}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}`,
+      `${getApiBase(ownerRepo)}/contents/${encodeGitHubContentPath(path)}?ref=${encodeURIComponent(branch)}`,
     );
     if (!data.content || data.encoding !== 'base64') return null;
     const b = atob(data.content.replace(/\n/g, ''));
@@ -133,7 +137,7 @@ async function putFile(
   message: string,
   sha?: string,
 ) {
-  return gh(token, `${getApiBase(ownerRepo)}/contents/${encodeURIComponent(path)}`, {
+  return gh(token, `${getApiBase(ownerRepo)}/contents/${encodeGitHubContentPath(path)}`, {
     method: 'PUT',
     body: JSON.stringify({ message, content: contentBase64, branch, sha }),
   });
@@ -143,6 +147,116 @@ function bytesToBase64(bytes: Uint8Array) {
   let binary = '';
   bytes.forEach((b) => (binary += String.fromCharCode(b)));
   return btoa(binary);
+}
+
+type PublishSqliteArgs = {
+  SQL: Awaited<ReturnType<typeof loadSqlEngine>>;
+  token: string;
+  ownerRepo: string;
+  branch: string;
+  sqlitePath: string;
+  slug: string;
+  now: string;
+  title: string;
+  description: string;
+  tags: string;
+  refs: string;
+  links: string;
+  baseDir: string;
+};
+
+function buildSqliteWithPost({
+  SQL,
+  sqliteBytes,
+  slug,
+  now,
+  title,
+  description,
+  tags,
+  refs,
+  links,
+  baseDir,
+}: Omit<PublishSqliteArgs, 'token' | 'ownerRepo' | 'branch' | 'sqlitePath'> & { sqliteBytes: Uint8Array | null }) {
+  const db = sqliteBytes ? new SQL.Database(sqliteBytes) : new SQL.Database();
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS posts (
+      slug TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      tags TEXT DEFAULT '',
+      refs TEXT DEFAULT '',
+      links TEXT DEFAULT '',
+      folder TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+  `);
+
+  const existing = db.exec(`SELECT createdAt FROM posts WHERE slug = ${JSON.stringify(slug)} LIMIT 1`);
+  const createdAt = existing.length > 0 && existing[0].values.length > 0 ? String(existing[0].values[0][0]) : now;
+
+  db.run(
+    `INSERT INTO posts (slug,title,description,tags,refs,links,folder,filename,createdAt,updatedAt)
+     VALUES (?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(slug) DO UPDATE SET
+      title=excluded.title,
+      description=excluded.description,
+      tags=excluded.tags,
+      refs=excluded.refs,
+      links=excluded.links,
+      folder=excluded.folder,
+      filename=excluded.filename,
+      updatedAt=excluded.updatedAt`,
+    [
+      slug,
+      title.trim(),
+      description.trim(),
+      tags.trim(),
+      refs,
+      links.trim(),
+      `${baseDir}/${slug}`,
+      'blog.md',
+      createdAt,
+      now,
+    ],
+  );
+
+  const sqliteOut = db.export();
+  db.close();
+  return sqliteOut;
+}
+
+async function publishSqliteWithRetry(args: PublishSqliteArgs) {
+  let sqliteBytes = await getBinaryFile(args.token, args.ownerRepo, args.sqlitePath, args.branch);
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const sqliteSha = await getFileSha(args.token, args.ownerRepo, args.sqlitePath, args.branch).catch(() => undefined);
+    const sqliteOut = buildSqliteWithPost({ ...args, sqliteBytes });
+
+    try {
+      await putFile(
+        args.token,
+        args.ownerRepo,
+        args.sqlitePath,
+        args.branch,
+        bytesToBase64(sqliteOut),
+        `blog: update sqlite index for ${args.slug}`,
+        sqliteSha,
+      );
+      return { bootstrap: !sqliteBytes };
+    } catch (error) {
+      lastError = error;
+      if (!isGitHubApiConflictError(error) || attempt === 2) {
+        throw error;
+      }
+      sqliteBytes = await getBinaryFile(args.token, args.ownerRepo, args.sqlitePath, args.branch);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Failed to update sqlite index.');
 }
 
 function preprocessMarkdownForPreview(md: string) {
@@ -449,59 +563,10 @@ export default function BlogEditApp() {
       const mergedRefs = Array.from(new Set([...refs.split(',').map((x) => x.trim()).filter(Boolean), ...extractedRefs])).join(', ');
 
       const SQL = await loadSqlEngine();
-      const sqliteBytes = await getBinaryFile(token, ownerRepo, settings.sqlitePath, settings.branch);
-      const isBootstrapPublish = !sqliteBytes;
-      const db = sqliteBytes ? new SQL.Database(sqliteBytes) : new SQL.Database();
-
-      db.run(`
-        CREATE TABLE IF NOT EXISTS posts (
-          slug TEXT PRIMARY KEY,
-          title TEXT NOT NULL,
-          description TEXT DEFAULT '',
-          tags TEXT DEFAULT '',
-          refs TEXT DEFAULT '',
-          links TEXT DEFAULT '',
-          folder TEXT NOT NULL,
-          filename TEXT NOT NULL,
-          createdAt TEXT NOT NULL,
-          updatedAt TEXT NOT NULL
-        );
-      `);
-
-      const existing = db.exec(`SELECT createdAt FROM posts WHERE slug = ${JSON.stringify(slug)} LIMIT 1`);
-      const createdAt = existing.length > 0 && existing[0].values.length > 0 ? String(existing[0].values[0][0]) : now;
-
-      db.run(
-        `INSERT INTO posts (slug,title,description,tags,refs,links,folder,filename,createdAt,updatedAt)
-         VALUES (?,?,?,?,?,?,?,?,?,?)
-         ON CONFLICT(slug) DO UPDATE SET
-          title=excluded.title,
-          description=excluded.description,
-          tags=excluded.tags,
-          refs=excluded.refs,
-          links=excluded.links,
-          folder=excluded.folder,
-          filename=excluded.filename,
-          updatedAt=excluded.updatedAt`,
-        [
-          slug,
-          title.trim(),
-          description.trim(),
-          tags.trim(),
-          mergedRefs,
-          links.trim(),
-          `${settings.baseDir}/${slug}`,
-          'blog.md',
-          createdAt,
-          now,
-        ],
-      );
-
-      const sqliteOut = db.export();
-      db.close();
+      const initialSqliteBytes = await getBinaryFile(token, ownerRepo, settings.sqlitePath, settings.branch);
+      const isBootstrapPublish = !initialSqliteBytes;
 
       const postSha = await getFileSha(token, ownerRepo, postPath, settings.branch).catch(() => undefined);
-      const sqliteSha = await getFileSha(token, ownerRepo, settings.sqlitePath, settings.branch).catch(() => undefined);
 
       await putFile(
         token,
@@ -513,15 +578,21 @@ export default function BlogEditApp() {
         postSha,
       );
 
-      await putFile(
+      await publishSqliteWithRetry({
+        SQL,
         token,
         ownerRepo,
-        settings.sqlitePath,
-        settings.branch,
-        bytesToBase64(sqliteOut),
-        `blog: update sqlite index for ${slug}`,
-        sqliteSha,
-      );
+        branch: settings.branch,
+        sqlitePath: settings.sqlitePath,
+        slug,
+        now,
+        title,
+        description,
+        tags,
+        refs: mergedRefs,
+        links,
+        baseDir: settings.baseDir,
+      });
 
       setMsg(
         `✅ Published ${slug} to ${ownerRepo}${isBootstrapPublish ? ' (created a new sqlite index automatically)' : ''}`,
