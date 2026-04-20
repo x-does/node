@@ -43,6 +43,14 @@ function makeSqliteFile(filename: string, row: { slug: string; title: string; de
   return file;
 }
 
+function restoreEnv(name: 'BLOG_SQLITE_PATH' | 'GITHUB_PAT' | 'GITHUB_TOKEN', value: string | undefined) {
+  if (value === undefined) {
+    delete process.env[name];
+  } else {
+    process.env[name] = value;
+  }
+}
+
 test('loadMainBlogPosts falls back to GitHub sqlite contents when no local sqlite file exists, even without a token', async () => {
   const sqliteFile = makeSqliteFile(`main-blog-db-test-${Date.now()}-${Math.random().toString(16).slice(2)}.sqlite`, {
     slug: 'remote-test-post',
@@ -80,21 +88,9 @@ test('loadMainBlogPosts falls back to GitHub sqlite contents when no local sqlit
     assert.equal(posts[0]?.title, 'Remote Test Post');
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalBlogSqlitePath === undefined) {
-      delete process.env.BLOG_SQLITE_PATH;
-    } else {
-      process.env.BLOG_SQLITE_PATH = originalBlogSqlitePath;
-    }
-    if (originalGithubPat === undefined) {
-      delete process.env.GITHUB_PAT;
-    } else {
-      process.env.GITHUB_PAT = originalGithubPat;
-    }
-    if (originalGithubToken === undefined) {
-      delete process.env.GITHUB_TOKEN;
-    } else {
-      process.env.GITHUB_TOKEN = originalGithubToken;
-    }
+    restoreEnv('BLOG_SQLITE_PATH', originalBlogSqlitePath);
+    restoreEnv('GITHUB_PAT', originalGithubPat);
+    restoreEnv('GITHUB_TOKEN', originalGithubToken);
     fs.rmSync(sqliteFile, { force: true });
     fs.rmSync(path.join(os.tmpdir(), 'xdoes-blog-remote-test-sha.sqlite'), { force: true });
   }
@@ -142,23 +138,59 @@ test('loadMainBlogPosts prefers fresher remote sqlite over stale local sqlite', 
     assert.equal(posts[0]?.title, 'Fresh Remote Post');
   } finally {
     globalThis.fetch = originalFetch;
-    if (originalBlogSqlitePath === undefined) {
-      delete process.env.BLOG_SQLITE_PATH;
-    } else {
-      process.env.BLOG_SQLITE_PATH = originalBlogSqlitePath;
-    }
-    if (originalGithubPat === undefined) {
-      delete process.env.GITHUB_PAT;
-    } else {
-      process.env.GITHUB_PAT = originalGithubPat;
-    }
-    if (originalGithubToken === undefined) {
-      delete process.env.GITHUB_TOKEN;
-    } else {
-      process.env.GITHUB_TOKEN = originalGithubToken;
-    }
+    restoreEnv('BLOG_SQLITE_PATH', originalBlogSqlitePath);
+    restoreEnv('GITHUB_PAT', originalGithubPat);
+    restoreEnv('GITHUB_TOKEN', originalGithubToken);
     fs.rmSync(staleLocal, { force: true });
     fs.rmSync(remoteSqlite, { force: true });
     fs.rmSync(path.join(os.tmpdir(), 'xdoes-blog-remote-preferred-sha.sqlite'), { force: true });
+  }
+});
+
+test('loadMainBlogPosts ignores masked GitHub tokens so public repo fetches still work', async () => {
+  const remoteSqlite = makeSqliteFile(`main-blog-db-masked-${Date.now()}-${Math.random().toString(16).slice(2)}.sqlite`, {
+    slug: 'public-fetch-post',
+    title: 'Public Fetch Post',
+    description: 'Should load without sending masked auth',
+  });
+  const remoteBytes = fs.readFileSync(remoteSqlite);
+  const originalFetch = globalThis.fetch;
+  const originalBlogSqlitePath = process.env.BLOG_SQLITE_PATH;
+  const originalGithubPat = process.env.GITHUB_PAT;
+  const originalGithubToken = process.env.GITHUB_TOKEN;
+  let seenAuthorization: string | null = null;
+
+  process.env.BLOG_SQLITE_PATH = path.join(os.tmpdir(), `definitely-missing-${Date.now()}-masked.sqlite`);
+  process.env.GITHUB_PAT = 'ghp_wj...MEp6';
+  delete process.env.GITHUB_TOKEN;
+
+  globalThis.fetch = (async (_input, init) => {
+    const headers = new Headers(init?.headers);
+    seenAuthorization = headers.get('authorization');
+    return new Response(
+      JSON.stringify({
+        encoding: 'base64',
+        content: remoteBytes.toString('base64'),
+        sha: 'remote-masked-sha',
+      }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    );
+  }) as typeof fetch;
+
+  try {
+    const posts = await loadMainBlogPosts(undefined, 10);
+    assert.equal(seenAuthorization, null);
+    assert.equal(posts.length, 1);
+    assert.equal(posts[0]?.slug, 'public-fetch-post');
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv('BLOG_SQLITE_PATH', originalBlogSqlitePath);
+    restoreEnv('GITHUB_PAT', originalGithubPat);
+    restoreEnv('GITHUB_TOKEN', originalGithubToken);
+    fs.rmSync(remoteSqlite, { force: true });
+    fs.rmSync(path.join(os.tmpdir(), 'xdoes-blog-remote-masked-sha.sqlite'), { force: true });
   }
 });

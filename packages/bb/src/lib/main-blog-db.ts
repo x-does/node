@@ -44,8 +44,17 @@ function latestCachedTempSqlitePath() {
   return files[0]?.file || null;
 }
 
+function usableGitHubToken() {
+  const token = (process.env.GITHUB_PAT || process.env.GITHUB_TOKEN || '').trim();
+  if (!token) return null;
+  if (token.includes('...')) return null;
+  if (/[*\s]/.test(token)) return null;
+  if (token.length < 20) return null;
+  return token;
+}
+
 async function fetchRemoteSqliteToTempFile() {
-  const token = process.env.GITHUB_PAT || process.env.GITHUB_TOKEN;
+  const token = usableGitHubToken();
 
   const repo = configuredGitHubRepo();
   const branch = configuredBranch();
@@ -162,7 +171,7 @@ export async function loadMainBlogMarkdown(row: Pick<MainBlogRow, 'folder' | 'fi
     }
   }
 
-  const token = process.env.GITHUB_PAT || process.env.GITHUB_TOKEN;
+  const token = usableGitHubToken();
   const repo = configuredGitHubRepo();
   const branch = configuredBranch();
   const encodedPath = relativePath.split('/').map(encodeURIComponent).join('/');
