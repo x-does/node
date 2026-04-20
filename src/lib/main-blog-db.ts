@@ -135,3 +135,55 @@ export async function loadMainBlogPosts(query?: string, limit = 50): Promise<Mai
 
   return [];
 }
+
+export async function loadMainBlogPostBySlug(slug: string): Promise<MainBlogRow | null> {
+  const normalizedSlug = slug.trim();
+  if (!normalizedSlug) return null;
+
+  const posts = await loadMainBlogPosts(undefined, 200);
+  return posts.find((post) => post.slug === normalizedSlug) || null;
+}
+
+export async function loadMainBlogMarkdown(row: Pick<MainBlogRow, 'folder' | 'filename'>): Promise<string | null> {
+  const relativePath = `${row.folder}/${row.filename}`.replace(/^\/+/, '');
+  const localCandidates = candidateLocalSqlitePaths()
+    .map((file) => path.resolve(path.dirname(file), relativePath));
+
+  for (const candidate of localCandidates) {
+    if (fs.existsSync(candidate)) {
+      return fs.readFileSync(candidate, 'utf8');
+    }
+  }
+
+  const token = process.env.GITHUB_PAT || process.env.GITHUB_TOKEN;
+  const repo = configuredGitHubRepo();
+  const branch = configuredBranch();
+  const encodedPath = relativePath.split('/').map(encodeURIComponent).join('/');
+  const url = `https://api.github.com/repos/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(branch)}`;
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+    'User-Agent': 'xdoes-node-blog-loader',
+  };
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const res = await fetch(url, {
+    headers,
+    cache: 'no-store',
+  });
+
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`GitHub blog markdown fetch failed (${res.status}): ${text}`);
+  }
+
+  const payload = (await res.json()) as { content?: string; encoding?: string };
+  if (!payload.content || payload.encoding !== 'base64') {
+    throw new Error('GitHub blog markdown response did not include base64 content.');
+  }
+
+  return Buffer.from(payload.content.replace(/\n/g, ''), 'base64').toString('utf8');
+}

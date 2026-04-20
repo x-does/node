@@ -57,8 +57,24 @@ export async function BlogPage({ searchParams }: { searchParams: SearchParams })
         ) : (
           posts.map((post) => (
             <article key={post.slug} className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-4">
-              <h2 className="text-2xl font-semibold text-[#efe8ff]">{post.title}</h2>
-              <p className="mt-2 text-[#c6badb]">{post.description || 'No description.'}</p>
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-2xl font-semibold text-[#efe8ff]">
+                    <Link href={`/blog/${encodeURIComponent(post.slug)}`} className="hover:text-white hover:underline">
+                      {post.title}
+                    </Link>
+                  </h2>
+                  <p className="mt-2 text-[#c6badb]">{post.description || 'No description.'}</p>
+                </div>
+                <div className="flex flex-wrap gap-2 text-sm">
+                  <Link href={`/blog/${encodeURIComponent(post.slug)}`} className="rounded-lg border border-[#7f6b9d]/30 bg-[#1a1328] px-3 py-2 text-[#efe8ff] hover:border-[#a58ac8]/50">
+                    Read post
+                  </Link>
+                  <Link href={`/blog-edit?slug=${encodeURIComponent(post.slug)}`} className="rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/35 px-3 py-2 text-[#cdbfe4] hover:text-white">
+                    Open in editor
+                  </Link>
+                </div>
+              </div>
 
               <div className="mt-3 flex flex-wrap gap-2 text-xs">
                 {splitCsv(post.tags).map((tag) => (

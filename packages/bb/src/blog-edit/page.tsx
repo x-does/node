@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { marked } from 'marked';
 import initSqlJs from 'sql.js';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,6 +29,15 @@ type PostMeta = {
   filename: string;
   createdAt: string;
   updatedAt: string;
+};
+
+type BlogDocument = {
+  title: string;
+  description: string;
+  tags: string;
+  refs: string;
+  links: string;
+  markdown: string;
 };
 
 type Tab = 'editor' | 'posts' | 'settings';
@@ -114,6 +124,20 @@ async function getBinaryFile(token: string, ownerRepo: string, path: string, bra
     if (!data.content || data.encoding !== 'base64') return null;
     const b = atob(data.content.replace(/\n/g, ''));
     return Uint8Array.from(b, (ch) => ch.charCodeAt(0));
+  } catch (error) {
+    if (isGitHubApiNotFoundError(error)) return null;
+    throw error;
+  }
+}
+
+async function getTextFile(token: string, ownerRepo: string, path: string, branch: string) {
+  try {
+    const data = await gh<{ content?: string; encoding?: string }>(
+      token,
+      `${getApiBase(ownerRepo)}/contents/${encodeGitHubContentPath(path)}?ref=${encodeURIComponent(branch)}`,
+    );
+    if (!data.content || data.encoding !== 'base64') return null;
+    return decodeURIComponent(escape(atob(data.content.replace(/\n/g, ''))));
   } catch (error) {
     if (isGitHubApiNotFoundError(error)) return null;
     throw error;
@@ -267,6 +291,28 @@ function urlSafeText(text: string) {
   return text.replace(/[()]/g, '').trim();
 }
 
+function parseBlogDocument(markdown: string): BlogDocument {
+  const normalized = markdown.replace(/\r\n/g, '\n');
+  const lines = normalized.split('\n');
+  const titleLine = lines.find((line) => line.trim().startsWith('# '));
+  const title = titleLine ? titleLine.replace(/^#\s+/, '').trim() : '';
+  const bodyWithoutTitle = titleLine
+    ? lines.filter((line, index) => index !== lines.indexOf(titleLine)).join('\n').trim()
+    : normalized.trim();
+  const description = bodyWithoutTitle.split('\n').find((line) => line.trim())?.trim() || '';
+  const refs = Array.from(new Set(Array.from(normalized.matchAll(/(^|\s)@([a-z0-9-]{2,})/gi)).map((m) => m[2].toLowerCase()))).join(', ');
+  const links = Array.from(new Set(Array.from(normalized.matchAll(/https?:\/\/[^\s)]+/gi)).map((m) => m[0]))).join(', ');
+
+  return {
+    title,
+    description,
+    tags: '',
+    refs,
+    links,
+    markdown: normalized,
+  };
+}
+
 const VIEW_SEQUENCE: ViewMode[] = ['split', 'edit', 'preview'];
 
 function toggleEditPreviewMode(current: ViewMode): ViewMode {
@@ -278,6 +324,7 @@ function cycleViewMode(current: ViewMode): ViewMode {
 }
 
 export default function BlogEditApp() {
+  const [requestedSlug, setRequestedSlug] = useState('');
   const [tab, setTab] = useState<Tab>('editor');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [fullscreen, setFullscreen] = useState(false);
@@ -296,6 +343,7 @@ export default function BlogEditApp() {
   const [markdown, setMarkdown] = useState('# New post\n\nStart writing...');
 
   const [posts, setPosts] = useState<PostMeta[]>([]);
+  const [activeSlug, setActiveSlug] = useState('');
   const [query, setQuery] = useState('');
   const [repoQuery, setRepoQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -338,6 +386,25 @@ export default function BlogEditApp() {
   useEffect(() => {
     setRepoLocator(`${settings.owner}/${settings.repo}`);
   }, [settings.owner, settings.repo]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const slug = new URLSearchParams(window.location.search).get('slug') || '';
+    setRequestedSlug(slug.trim());
+  }, []);
+
+  useEffect(() => {
+    if (!requestedSlug || !token) return;
+    const existing = posts.find((post) => post.slug === requestedSlug);
+    if (existing) {
+      void openPostInEditor(existing);
+      return;
+    }
+
+    void (async () => {
+      await loadPostsFromRepo();
+    })();
+  }, [requestedSlug, token, posts]);
 
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
@@ -512,8 +579,50 @@ export default function BlogEditApp() {
 
       setPosts(items);
       setMsg(`Loaded ${items.length} posts from ${ownerRepo}/${target.sqlitePath}`);
+
+      if (requestedSlug) {
+        const requestedPost = items.find((item) => item.slug === requestedSlug);
+        if (requestedPost) {
+          await openPostInEditor(requestedPost, target);
+          return;
+        }
+      }
     } catch (e) {
       setMsg(`❌ ${e instanceof Error ? e.message : 'failed to load posts'}`);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function openPostInEditor(post: PostMeta, target = settings) {
+    if (!token) {
+      setMsg('Please auth with GitHub first.');
+      return;
+    }
+
+    setLoading(true);
+    setMsg(`Opening ${post.slug}...`);
+    try {
+      const ownerRepo = `${target.owner}/${target.repo}`;
+      const postPath = `${post.folder}/${post.filename}`;
+      const file = await getTextFile(token, ownerRepo, postPath, target.branch);
+      if (!file) {
+        setMsg(`❌ Could not load ${postPath} from ${ownerRepo}.`);
+        return;
+      }
+
+      const parsed = parseBlogDocument(file);
+      setTitle(post.title || parsed.title);
+      setDescription(post.description || parsed.description);
+      setTags(post.tags || parsed.tags);
+      setRefs(post.refs || parsed.refs);
+      setLinks(post.links || parsed.links);
+      setMarkdown(parsed.markdown);
+      setActiveSlug(post.slug);
+      setTab('editor');
+      setMsg(`Loaded ${post.slug} into the editor.`);
+    } catch (e) {
+      setMsg(`❌ ${e instanceof Error ? e.message : 'failed to open post'}`);
     } finally {
       setLoading(false);
     }
@@ -734,6 +843,7 @@ export default function BlogEditApp() {
         {tab === 'editor' && (
           <div className="mt-6 grid gap-3">
             <input className={input} placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
+            {activeSlug ? <div className="text-xs uppercase tracking-[0.16em] text-[#8ea6e8]">Editing existing post: {activeSlug}</div> : null}
             <input className={input} placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
             <input className={input} placeholder="Tags (comma separated)" value={tags} onChange={(e) => setTags(e.target.value)} />
             <input className={input} placeholder="Refs/blog slugs (comma separated, or use @slug in content)" value={refs} onChange={(e) => setRefs(e.target.value)} />
@@ -787,8 +897,18 @@ export default function BlogEditApp() {
             <div className="grid gap-3">
               {filtered.map((p) => (
                 <article key={p.slug} className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-4">
-                  <h3 className="text-xl font-semibold text-[#efe8ff]">{p.title}</h3>
-                  <p className="mt-1 text-[#c7bbdc]">{p.description}</p>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-xl font-semibold text-[#efe8ff]">{p.title}</h3>
+                      <p className="mt-1 text-[#c7bbdc]">{p.description}</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-sm">
+                      <button type="button" className={btn(false)} onClick={() => void openPostInEditor(p)} disabled={loading}>Open in editor</button>
+                      <Link href={`/blog/${encodeURIComponent(p.slug)}`} className="rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/35 px-3 py-2 text-[#cdbfe4] hover:text-white">
+                        Read post
+                      </Link>
+                    </div>
+                  </div>
                   <div className="mt-2 text-sm text-[#ad9fc5]">tags: {p.tags || '-'} | refs: {p.refs || '-'} | links: {p.links || '-'}</div>
                   <div className="mt-1 text-xs text-[#9c8db7]">{p.folder}/{p.filename} · updated {p.updatedAt}</div>
                 </article>
