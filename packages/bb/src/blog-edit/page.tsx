@@ -3,6 +3,7 @@
 import { marked } from 'marked';
 import initSqlJs from 'sql.js';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import { isGitHubApiNotFoundError } from './github-api';
 import { describePublishTarget, getSettingsForSelectedRepo, parseRepositoryInput } from './repo-connection';
 
 type Repo = {
@@ -101,13 +102,18 @@ async function loadSqlEngine() {
 }
 
 async function getBinaryFile(token: string, ownerRepo: string, path: string, branch: string) {
-  const data = await gh<{ content?: string; encoding?: string }>(
-    token,
-    `${getApiBase(ownerRepo)}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}`,
-  );
-  if (!data.content || data.encoding !== 'base64') return null;
-  const b = atob(data.content.replace(/\n/g, ''));
-  return Uint8Array.from(b, (ch) => ch.charCodeAt(0));
+  try {
+    const data = await gh<{ content?: string; encoding?: string }>(
+      token,
+      `${getApiBase(ownerRepo)}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}`,
+    );
+    if (!data.content || data.encoding !== 'base64') return null;
+    const b = atob(data.content.replace(/\n/g, ''));
+    return Uint8Array.from(b, (ch) => ch.charCodeAt(0));
+  } catch (error) {
+    if (isGitHubApiNotFoundError(error)) return null;
+    throw error;
+  }
 }
 
 async function getFileSha(token: string, ownerRepo: string, path: string, branch: string) {
@@ -444,6 +450,7 @@ export default function BlogEditApp() {
 
       const SQL = await loadSqlEngine();
       const sqliteBytes = await getBinaryFile(token, ownerRepo, settings.sqlitePath, settings.branch);
+      const isBootstrapPublish = !sqliteBytes;
       const db = sqliteBytes ? new SQL.Database(sqliteBytes) : new SQL.Database();
 
       db.run(`
@@ -516,7 +523,9 @@ export default function BlogEditApp() {
         sqliteSha,
       );
 
-      setMsg(`✅ Published ${slug} to ${ownerRepo}`);
+      setMsg(
+        `✅ Published ${slug} to ${ownerRepo}${isBootstrapPublish ? ' (created a new sqlite index automatically)' : ''}`,
+      );
       await loadPostsFromRepo();
     } catch (e) {
       setMsg(`❌ ${e instanceof Error ? e.message : 'publish failed'}`);
