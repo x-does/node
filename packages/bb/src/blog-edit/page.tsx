@@ -394,7 +394,7 @@ export default function BlogEditApp() {
   }, []);
 
   useEffect(() => {
-    if (!requestedSlug || !token) return;
+    if (!requestedSlug) return;
     const existing = posts.find((post) => post.slug === requestedSlug);
     if (existing) {
       void openPostInEditor(existing);
@@ -404,7 +404,7 @@ export default function BlogEditApp() {
     void (async () => {
       await loadPostsFromRepo();
     })();
-  }, [requestedSlug, token, posts]);
+  }, [requestedSlug, posts]);
 
   useEffect(() => {
     function onMessage(ev: MessageEvent) {
@@ -553,14 +553,46 @@ export default function BlogEditApp() {
   }
 
   async function loadPostsFromRepo(target = settings) {
-    if (!token) return;
     setLoading(true);
     setMsg('');
 
     try {
       const ownerRepo = `${target.owner}/${target.repo}`;
       const SQL = await loadSqlEngine();
-      const sqliteBytes = await getBinaryFile(token, ownerRepo, target.sqlitePath, target.branch);
+      let sqliteBytes: Uint8Array | null = null;
+
+      if (token) {
+        sqliteBytes = await getBinaryFile(token, ownerRepo, target.sqlitePath, target.branch);
+      } else {
+        const res = await fetch(`/api/main-blog/posts?limit=100&cb=${Date.now()}`, { cache: 'no-store' });
+        if (!res.ok) throw new Error(`Failed to load public blog index (${res.status}).`);
+        const data = (await res.json()) as { ok?: boolean; posts?: Array<Record<string, unknown>> };
+        const items = Array.isArray(data.posts)
+          ? data.posts.map((item) => ({
+              slug: String(item.slug || ''),
+              title: String(item.title || ''),
+              description: String(item.description || ''),
+              tags: String(item.tags || ''),
+              refs: String(item.refs || ''),
+              links: String(item.links || ''),
+              folder: String(item.folder || `${target.baseDir}/${String(item.slug || '')}`),
+              filename: String(item.filename || 'blog.md'),
+              createdAt: String(item.createdAt || ''),
+              updatedAt: String(item.updatedAt || ''),
+            }))
+          : [];
+        setPosts(items);
+        setMsg(`Loaded ${items.length} posts from the public blog index.`);
+
+        if (requestedSlug) {
+          const requestedPost = items.find((item) => item.slug === requestedSlug);
+          if (requestedPost) {
+            await openPostInEditor(requestedPost, target);
+            return;
+          }
+        }
+        return;
+      }
 
       if (!sqliteBytes) {
         setPosts([]);
@@ -595,17 +627,22 @@ export default function BlogEditApp() {
   }
 
   async function openPostInEditor(post: PostMeta, target = settings) {
-    if (!token) {
-      setMsg('Please auth with GitHub first.');
-      return;
-    }
-
     setLoading(true);
     setMsg(`Opening ${post.slug}...`);
     try {
       const ownerRepo = `${target.owner}/${target.repo}`;
       const postPath = `${post.folder}/${post.filename}`;
-      const file = await getTextFile(token, ownerRepo, postPath, target.branch);
+      let file: string | null = null;
+
+      if (token) {
+        file = await getTextFile(token, ownerRepo, postPath, target.branch);
+      } else {
+        const res = await fetch(`/api/main-blog/post/${encodeURIComponent(post.slug)}?cb=${Date.now()}`, { cache: 'no-store' });
+        if (res.ok) {
+          file = await res.text();
+        }
+      }
+
       if (!file) {
         setMsg(`❌ Could not load ${postPath} from ${ownerRepo}.`);
         return;
