@@ -43,7 +43,7 @@ function makeSqliteFile() {
   return file;
 }
 
-test('loadMainBlogPosts falls back to GitHub sqlite contents when no local sqlite file exists', async () => {
+test('loadMainBlogPosts falls back to GitHub sqlite contents when no local sqlite file exists, even without a token', async () => {
   const sqliteFile = makeSqliteFile();
   const sqliteBytes = fs.readFileSync(sqliteFile);
   const originalFetch = globalThis.fetch;
@@ -52,7 +52,7 @@ test('loadMainBlogPosts falls back to GitHub sqlite contents when no local sqlit
   const originalGithubToken = process.env.GITHUB_TOKEN;
 
   process.env.BLOG_SQLITE_PATH = path.join(os.tmpdir(), `definitely-missing-${Date.now()}.sqlite`);
-  process.env.GITHUB_PAT = 'test-token';
+  delete process.env.GITHUB_PAT;
   delete process.env.GITHUB_TOKEN;
 
   globalThis.fetch = (async () => {
