@@ -690,6 +690,18 @@ export default function BlogEditApp() {
     setMsg(`Connected editor to ${parsed.owner}/${parsed.repo}.`);
   }
 
+  function startNewDraft() {
+    setActiveSlug('');
+    setTitle('');
+    setDescription('');
+    setTags('');
+    setRefs('');
+    setLinks('');
+    setMarkdown('# New post\n\nStart writing...');
+    setTab('editor');
+    setMsg('Started a new draft.');
+  }
+
   async function publish() {
     if (!token) return setMsg('Please auth with GitHub first.');
     if (!title.trim() || !markdown.trim()) return setMsg('Title and markdown are required.');
@@ -699,7 +711,9 @@ export default function BlogEditApp() {
 
     try {
       const ownerRepo = `${settings.owner}/${settings.repo}`;
-      const slug = toSlug(title);
+      const nextSlug = toSlug(title);
+      const slug = activeSlug || nextSlug;
+      if (!slug) return setMsg('A valid slug could not be generated from the title.');
       const postPath = `${settings.baseDir}/${slug}/blog.md`;
       const now = new Date().toISOString();
 
@@ -769,7 +783,7 @@ export default function BlogEditApp() {
   const showPreview = viewMode === 'split' || viewMode === 'preview';
   const publishTarget = describePublishTarget({
     ...settings,
-    slug: toSlug(title) || 'draft-post',
+    slug: activeSlug || toSlug(title) || 'draft-post',
   });
 
   return (
@@ -825,6 +839,7 @@ export default function BlogEditApp() {
             <button type="button" onClick={startAuth} className={btn(false)} disabled={loading}>{token ? 'Re-auth with GitHub' : 'Connect GitHub'}</button>
             <button type="button" onClick={loadRepos} className={btn(false)} disabled={!token || loading}>Load writable repos</button>
             <button type="button" onClick={() => void loadPostsFromRepo()} className={btn(false)} disabled={!token || loading}>Load posts from selected repo</button>
+            <button type="button" onClick={startNewDraft} className={btn(false)} disabled={loading}>New draft</button>
             <button type="button" onClick={() => setTab('settings')} className={btn(tab === 'settings')} disabled={loading}>Repo settings</button>
             <button type="button" onClick={() => setFullscreen((v) => !v)} className={btn(false)} disabled={loading} title="Ctrl+Shift+F">Toggle fullscreen</button>
             <button type="button" onClick={() => { localStorage.removeItem(LS_TOKEN); setToken(''); setAuthedUser(''); setRepos([]); setRepoQuery(''); setMsg('Logged out locally.'); }} className={btn(false)} disabled={loading}>Clear local token</button>

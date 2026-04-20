@@ -138,15 +138,15 @@ function queryPosts(file: string, query?: string, limit = 50): MainBlogRow[] {
 }
 
 export async function loadMainBlogPosts(query?: string, limit = 50): Promise<MainBlogRow[]> {
-  const localFile = existingLocalSqlitePath();
-  if (localFile) return queryPosts(localFile, query, limit);
-
   try {
     const remoteFile = await fetchRemoteSqliteToTempFile();
     if (remoteFile) return queryPosts(remoteFile, query, limit);
   } catch (error) {
-    console.warn('[main-blog-db] remote sqlite fetch failed; falling back to latest cached temp sqlite if available', error);
+    console.warn('[main-blog-db] remote sqlite fetch failed; falling back to local/cached sqlite if available', error);
   }
+
+  const localFile = existingLocalSqlitePath();
+  if (localFile) return queryPosts(localFile, query, limit);
 
   const cachedFile = latestCachedTempSqlitePath();
   if (cachedFile) return queryPosts(cachedFile, query, limit);
