@@ -62,3 +62,48 @@ export function describeRepoWorkspace(
   };
 }
 
+export function describeRepoWorkflowState(args: {
+  ownerRepo: string;
+  hasToken: boolean;
+  hasLoadedRepos: boolean;
+  selectedRepoIsListed: boolean;
+}) {
+  if (!args.hasToken) {
+    return {
+      tone: 'info' as const,
+      badge: 'Connect GitHub',
+      headline: `Publishing is pointed at ${args.ownerRepo}, but GitHub auth is still disconnected.`,
+      detail: 'Connect GitHub to browse writable repositories, publish changes, and sync the selected workspace with one click.',
+      primaryActionLabel: 'Connect GitHub',
+    };
+  }
+
+  if (!args.hasLoadedRepos) {
+    return {
+      tone: 'info' as const,
+      badge: 'Load repos',
+      headline: `GitHub is connected. Load writable repositories to confirm that ${args.ownerRepo} is the right workspace.`,
+      detail: 'You can keep using the manual locator, but loading repos makes it easier to switch workspaces and open posts without touching advanced settings.',
+      primaryActionLabel: 'Load writable repos',
+    };
+  }
+
+  if (!args.selectedRepoIsListed) {
+    return {
+      tone: 'info' as const,
+      badge: 'Manual target',
+      headline: `${args.ownerRepo} is currently selected via the manual locator.`,
+      detail: 'Refresh posts to verify this target, or choose a repository card below if you want to switch back to a known writable workspace.',
+      primaryActionLabel: 'Refresh posts',
+    };
+  }
+
+  return {
+    tone: 'success' as const,
+    badge: 'Workspace ready',
+    headline: `${args.ownerRepo} is selected and ready for create, update, and delete actions.`,
+    detail: 'Use Refresh posts to sync the current repo, then keep publishing from the editor without revisiting advanced settings.',
+    primaryActionLabel: 'Refresh posts',
+  };
+}
+

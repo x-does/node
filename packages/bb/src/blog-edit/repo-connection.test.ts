@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   parseRepositoryInput,
   describePublishTarget,
+  describeRepoWorkflowState,
   describeRepoWorkspace,
   getSettingsForSelectedRepo,
 } from './repo-connection';
@@ -139,5 +140,36 @@ test('describeRepoWorkspace prompts to load repositories after auth is ready', (
       hasLoadedRepos: false,
     }).nextStep,
     'Load writable repositories, or paste a repository locator to choose a different workspace.',
+  );
+});
+
+test('describeRepoWorkflowState explains the connected happy path', () => {
+  assert.deepEqual(
+    describeRepoWorkflowState({
+      ownerRepo: 'x-does/blog',
+      hasToken: true,
+      hasLoadedRepos: true,
+      selectedRepoIsListed: true,
+    }),
+    {
+      tone: 'success',
+      badge: 'Workspace ready',
+      headline: 'x-does/blog is selected and ready for create, update, and delete actions.',
+      detail:
+        'Use Refresh posts to sync the current repo, then keep publishing from the editor without revisiting advanced settings.',
+      primaryActionLabel: 'Refresh posts',
+    },
+  );
+});
+
+test('describeRepoWorkflowState explains manual locator targets separately', () => {
+  assert.deepEqual(
+    describeRepoWorkflowState({
+      ownerRepo: 'sav/manual-blog',
+      hasToken: true,
+      hasLoadedRepos: true,
+      selectedRepoIsListed: false,
+    }).badge,
+    'Manual target',
   );
 });
