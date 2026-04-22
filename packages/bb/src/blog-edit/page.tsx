@@ -5,7 +5,7 @@ import { marked } from 'marked';
 import initSqlJs from 'sql.js';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { isGitHubApiConflictError, isGitHubApiNotFoundError } from './github-api';
-import { describeDeleteAction, getPostContentPath } from './post-management';
+import { describeDeleteAction, describePublishAction, getPostContentPath } from './post-management';
 import { describePublishTarget, getSettingsForSelectedRepo, parseRepositoryInput } from './repo-connection';
 
 type Repo = {
@@ -48,6 +48,7 @@ type ToastTone = 'success' | 'error' | 'info';
 type Toast = {
   id: number;
   tone: ToastTone;
+  title: string;
   message: string;
 };
 
@@ -512,9 +513,14 @@ export default function BlogEditApp() {
   }
 
   function pushToast(tone: ToastTone, message: string) {
+    const title = tone === 'success' ? 'Success' : tone === 'error' ? 'Something went wrong' : 'Heads up';
+    pushToastWithTitle(tone, title, message);
+  }
+
+  function pushToastWithTitle(tone: ToastTone, title: string, message: string) {
     const id = nextToastIdRef.current + 1;
     nextToastIdRef.current = id;
-    setToasts((current) => [...current, { id, tone, message }]);
+    setToasts((current) => [...current, { id, tone, title, message }]);
     const timer = window.setTimeout(() => {
       toastTimersRef.current.delete(id);
       setToasts((current) => current.filter((toast) => toast.id !== id));
@@ -526,8 +532,12 @@ export default function BlogEditApp() {
     setStatusText(message);
   }
 
-  function notify(tone: ToastTone, message: string, status = message) {
+  function notify(tone: ToastTone, message: string, status = message, title?: string) {
     updateStatus(status);
+    if (title) {
+      pushToastWithTitle(tone, title, message);
+      return;
+    }
     pushToast(tone, message);
   }
 
@@ -796,11 +806,12 @@ export default function BlogEditApp() {
     const selected = repos.find((r) => r.full_name === full);
     const nextSettings = getSettingsForSelectedRepo(settings, full, selected);
     setSettings(nextSettings);
-    setTab('editor');
+    setTab(shouldLoadPosts ? 'posts' : 'editor');
     notify(
       'success',
       `Selected ${full}${selected?.default_branch ? ` on ${selected.default_branch}` : ''}.`,
       `Selected repo: ${full}${selected?.default_branch ? ` @ ${selected.default_branch}` : ''}.`,
+      'Repository selected',
     );
     if (shouldLoadPosts) {
       void loadPostsFromRepo(nextSettings);
@@ -810,14 +821,19 @@ export default function BlogEditApp() {
   function applyRepoLocator() {
     const parsed = parseRepositoryInput(repoLocator);
     if (!parsed) {
-      notify('error', 'Enter owner/repo or a full GitHub repo URL.', 'Repository locator is invalid.');
+      notify('error', 'Enter owner/repo or a full GitHub repo URL.', 'Repository locator is invalid.', 'Invalid repository locator');
       setTab('settings');
       return;
     }
 
     setSettings((s) => ({ ...s, owner: parsed.owner, repo: parsed.repo }));
     setTab('editor');
-    notify('success', `Selected ${parsed.owner}/${parsed.repo}.`, `Selected repo: ${parsed.owner}/${parsed.repo}.`);
+    notify(
+      'success',
+      `Selected ${parsed.owner}/${parsed.repo}. Review the target card, then load posts or publish from the editor.`,
+      `Selected repo: ${parsed.owner}/${parsed.repo}.`,
+      'Repository selected',
+    );
   }
 
   function startNewDraft() {
@@ -829,16 +845,16 @@ export default function BlogEditApp() {
     setLinks('');
     setMarkdown('# New post\n\nStart writing...');
     setTab('editor');
-    updateStatus('Started a new draft.');
+    notify('info', 'Started a fresh draft in the editor.', 'Started a new draft.', 'New draft');
   }
 
   async function publish() {
     if (!token) {
-      notify('error', 'Please auth with GitHub first.', 'GitHub auth is required before publishing.');
+      notify('error', 'Please auth with GitHub first.', 'GitHub auth is required before publishing.', 'Publish blocked');
       return;
     }
     if (!title.trim() || !markdown.trim()) {
-      notify('error', 'Title and markdown are required.', 'Title and markdown are required.');
+      notify('error', 'Title and markdown are required.', 'Title and markdown are required.', 'Publish blocked');
       return;
     }
 
@@ -850,7 +866,7 @@ export default function BlogEditApp() {
       const nextSlug = toSlug(title);
       const slug = activeSlug || nextSlug;
       if (!slug) {
-        notify('error', 'A valid slug could not be generated from the title.', 'Slug generation failed.');
+        notify('error', 'A valid slug could not be generated from the title.', 'Slug generation failed.', 'Publish blocked');
         return;
       }
       const postPath = `${settings.baseDir}/${slug}/blog.md`;
@@ -866,6 +882,12 @@ export default function BlogEditApp() {
       const isBootstrapPublish = !initialSqliteBytes;
 
       const postSha = await getFileSha(token, ownerRepo, postPath, settings.branch).catch(() => undefined);
+      const publishCopy = describePublishAction({
+        slug,
+        ownerRepo,
+        created: !postSha,
+        bootstrappedSqlite: isBootstrapPublish,
+      });
 
       await putFile(
         token,
@@ -893,14 +915,11 @@ export default function BlogEditApp() {
         baseDir: settings.baseDir,
       });
 
-      notify(
-        'success',
-        `Published ${slug} to ${ownerRepo}${isBootstrapPublish ? ' and created a new sqlite index automatically' : ''}.`,
-        `Published ${slug} to ${ownerRepo}.`,
-      );
+      setActiveSlug(slug);
+      notify('success', publishCopy.successMessage, publishCopy.statusMessage, publishCopy.successTitle);
       await loadPostsFromRepo();
     } catch (e) {
-      notify('error', e instanceof Error ? e.message : 'publish failed', 'Publish failed.');
+      notify('error', e instanceof Error ? e.message : 'publish failed', 'Publish failed.', 'Publish failed');
     } finally {
       setLoading(false);
     }
@@ -908,7 +927,7 @@ export default function BlogEditApp() {
 
   async function deletePost(post: PostMeta) {
     if (!token) {
-      notify('error', 'GitHub auth is required before deleting a post.', 'GitHub auth is required before deleting.');
+      notify('error', 'GitHub auth is required before deleting a post.', 'GitHub auth is required before deleting.', 'Delete blocked');
       return;
     }
 
@@ -948,9 +967,9 @@ export default function BlogEditApp() {
       if (activeSlug === post.slug) {
         setActiveSlug('');
       }
-      notify('success', deleteCopy.successMessage, `Deleted ${post.slug}.`);
+      notify('success', deleteCopy.successMessage, `Deleted ${post.slug}.`, `Deleted ${post.slug}`);
     } catch (e) {
-      notify('error', e instanceof Error ? e.message : 'delete failed', 'Delete failed.');
+      notify('error', e instanceof Error ? e.message : 'delete failed', 'Delete failed.', 'Delete failed');
     } finally {
       setLoading(false);
     }
@@ -976,6 +995,11 @@ export default function BlogEditApp() {
     ...settings,
     slug: activeSlug || toSlug(title) || 'draft-post',
   });
+  const selectedRepoLabel = `${settings.owner}/${settings.repo}`;
+  const selectedRepoCard = repos.find((repo) => repo.full_name === selectedRepoLabel);
+  const selectedRepoSummary =
+    selectedRepoCard?.description?.trim() ||
+    'Posts publish into the selected repo using the current branch, base directory, and sqlite path.';
 
   return (
     <div className={fullscreen ? 'fixed inset-0 z-50 overflow-auto bg-[#07060c] p-6' : ''}>
@@ -1006,15 +1030,17 @@ export default function BlogEditApp() {
                   {repos.length > 0 ? `${filteredRepos.length}/${repos.length} writable repos visible` : 'load repos to browse targets'}
                 </span>
               </div>
-              <div className="text-xs text-[#aa9ac5]">{statusText}</div>
-              <div className="text-xs text-[#aa9ac5]">
-                Connect flow: GitHub auth → choose or paste a repo → verify the target preview → publish.
+              <div className="text-xs text-[#8f80aa]">Latest activity: {statusText}</div>
+              <div className="flex flex-wrap gap-2 text-[11px] text-[#aa9ac5]">
+                <span className="rounded-full border border-[#7f6b9d]/25 px-2 py-0.5">1. Connect GitHub</span>
+                <span className="rounded-full border border-[#7f6b9d]/25 px-2 py-0.5">2. Choose repo</span>
+                <span className="rounded-full border border-[#7f6b9d]/25 px-2 py-0.5">3. Create or update post</span>
               </div>
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={startAuth} className={btn(false)} disabled={loading}>{token ? 'Re-auth GitHub' : 'Connect GitHub'}</button>
               <button type="button" onClick={startNewDraft} className={btn(false)} disabled={loading}>New draft</button>
-              <button type="button" onClick={() => void loadPostsFromRepo()} className={btn(false)} disabled={!token || loading}>Refresh posts</button>
+              <button type="button" onClick={() => void loadPostsFromRepo()} className={btn(false)} disabled={loading}>Refresh posts</button>
               <button type="button" onClick={() => setFullscreen((v) => !v)} className={btn(false)} disabled={loading} title="Ctrl+Shift+F">Fullscreen</button>
             </div>
           </div>
@@ -1023,27 +1049,12 @@ export default function BlogEditApp() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-[#efe8ff]">Selected publish target</div>
-                <div className="mt-1 text-[#aa9ac5]">Use a writable repo card below or paste a locator if the repo is missing.</div>
+                <div className="mt-1 text-[#aa9ac5]">{selectedRepoSummary}</div>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={loadRepos} className={btn(false)} disabled={!token || loading}>Load writable repos</button>
+                <button type="button" onClick={() => void loadPostsFromRepo()} className={btn(false)} disabled={loading}>Load posts</button>
                 <button type="button" onClick={() => setTab('settings')} className={btn(tab === 'settings')} disabled={loading}>Advanced settings</button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    localStorage.removeItem(LS_TOKEN);
-                    setToken('');
-                    setAuthedUser('');
-                    setRepos([]);
-                    setRepoQuery('');
-                    updateStatus('Cleared local GitHub token.');
-                    pushToast('info', 'Cleared the saved local GitHub token.');
-                  }}
-                  className={btn(false)}
-                  disabled={loading}
-                >
-                  Clear local token
-                </button>
               </div>
             </div>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
@@ -1056,10 +1067,14 @@ export default function BlogEditApp() {
                 <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
               </div>
               <div>
+                <div className="text-[#9c8db7]">Content directory</div>
+                <div className="font-medium text-[#efe8ff]">{publishTarget.baseDirLabel}</div>
+              </div>
+              <div>
                 <div className="text-[#9c8db7]">SQLite index</div>
                 <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
               </div>
-              <div>
+              <div className="md:col-span-2 xl:col-span-1">
                 <div className="text-[#9c8db7]">Next post file</div>
                 <div className="font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
               </div>
@@ -1070,7 +1085,7 @@ export default function BlogEditApp() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <div className="text-sm font-semibold text-[#efe8ff]">Choose a writable repository</div>
-                <div className="text-xs text-[#aa9ac5]">Pick a repo card to connect and load posts immediately.</div>
+                <div className="text-xs text-[#aa9ac5]">Pick a repo card to connect and load posts immediately, or paste a locator for a repo that is not listed.</div>
               </div>
               <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
             </div>
@@ -1081,7 +1096,7 @@ export default function BlogEditApp() {
                 value={repoQuery}
                 onChange={(e) => setRepoQuery(e.target.value)}
               />
-              <button type="button" className={btn(false)} onClick={applyRepoLocator} disabled={loading}>Use pasted locator</button>
+              <button type="button" className={btn(false)} onClick={applyRepoLocator} disabled={loading}>Apply pasted locator</button>
             </div>
             <input
               className={`${input} mt-3`}
@@ -1089,6 +1104,21 @@ export default function BlogEditApp() {
               value={repoLocator}
               onChange={(e) => setRepoLocator(e.target.value)}
             />
+            <div className="mt-3 rounded-xl border border-[#7f6b9d]/20 bg-[#120e1b]/80 p-3 text-xs text-[#cdbfe4]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Current repo connection</div>
+                  <div className="mt-1 text-sm font-semibold text-[#efe8ff]">{selectedRepoLabel}</div>
+                  <div className="mt-1 text-[#aa9ac5]">
+                    Branch <strong className="text-[#efe8ff]">{settings.branch}</strong> · base dir <strong className="text-[#efe8ff]">{settings.baseDir}</strong> · sqlite <strong className="text-[#efe8ff]">{settings.sqlitePath}</strong>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" className={miniBtn} onClick={() => setTab('posts')}>Browse posts</button>
+                  <button type="button" className={miniBtn} onClick={() => setTab('editor')}>Back to editor</button>
+                </div>
+              </div>
+            </div>
             {repos.length > 0 ? (
               <div className="mt-3 grid gap-2 md:grid-cols-2">
                 {filteredRepos.slice(0, 12).map((r) => (
@@ -1108,7 +1138,7 @@ export default function BlogEditApp() {
                       {r.private ? <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">private</span> : null}
                     </div>
                     {r.description ? <div className="mt-1 text-xs text-[#b9accf]">{r.description}</div> : null}
-                    <div className="mt-2 text-xs text-[#8ea6e8]">{publishTarget.ownerRepo === r.full_name ? 'Selected target' : 'Connect and load posts'}</div>
+                    <div className="mt-2 text-xs text-[#8ea6e8]">{publishTarget.ownerRepo === r.full_name ? 'Selected target' : 'Select repo and open posts'}</div>
                   </button>
                 ))}
                 {filteredRepos.length === 0 ? (
@@ -1133,11 +1163,14 @@ export default function BlogEditApp() {
             <div
               key={toast.id}
               className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm shadow-2xl backdrop-blur ${toastClassName(toast.tone)}`}
-              role="status"
-              aria-live="polite"
+              role={toast.tone === 'error' ? 'alert' : 'status'}
+              aria-live={toast.tone === 'error' ? 'assertive' : 'polite'}
             >
               <div className="flex items-start gap-3">
-                <div className="flex-1">{toast.message}</div>
+                <div className="flex-1">
+                  <div className="font-semibold text-white">{toast.title}</div>
+                  <div className="mt-1 text-white/85">{toast.message}</div>
+                </div>
                 <button type="button" className="text-xs text-white/80 hover:text-white" onClick={() => dismissToast(toast.id)}>
                   Dismiss
                 </button>
@@ -1202,8 +1235,9 @@ export default function BlogEditApp() {
 
         {tab === 'posts' && (
           <div className="mt-6">
-            <div className="mb-3 flex gap-2">
+            <div className="mb-3 flex flex-wrap items-center gap-2">
               <input className={input} placeholder="Search posts" value={query} onChange={(e) => setQuery(e.target.value)} />
+              <span className="text-xs text-[#9c8db7]">{filtered.length} shown · {posts.length} total</span>
             </div>
             <div className="grid gap-3">
               {filtered.map((p) => (
@@ -1214,11 +1248,18 @@ export default function BlogEditApp() {
                       <p className="mt-1 text-[#c7bbdc]">{p.description}</p>
                     </div>
                     <div className="flex flex-wrap gap-2 text-sm">
-                      <button type="button" className={btn(false)} onClick={() => void openPostInEditor(p)} disabled={loading}>Open in editor</button>
-                      <button type="button" className={btn(false)} onClick={() => void deletePost(p)} disabled={!token || loading}>Delete post</button>
+                      <button type="button" className={btn(false)} onClick={() => void openPostInEditor(p)} disabled={loading}>Edit post</button>
                       <Link href={`/blog/${encodeURIComponent(p.slug)}`} className="rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/35 px-3 py-2 text-[#cdbfe4] hover:text-white">
-                        Read post
+                        View live
                       </Link>
+                      <button
+                        type="button"
+                        className="rounded-lg border border-rose-500/35 bg-rose-950/25 px-3 py-2 text-rose-100 hover:border-rose-400/55 hover:bg-rose-900/35 disabled:cursor-not-allowed disabled:opacity-50"
+                        onClick={() => void deletePost(p)}
+                        disabled={!token || loading}
+                      >
+                        Delete
+                      </button>
                     </div>
                   </div>
                   <div className="mt-2 text-sm text-[#ad9fc5]">tags: {p.tags || '-'} | refs: {p.refs || '-'} | links: {p.links || '-'}</div>

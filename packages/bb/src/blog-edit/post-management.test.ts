@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { describeDeleteAction, getPostContentPath } from './post-management';
+import { describeDeleteAction, describePublishAction, getPostContentPath } from './post-management';
 
 test('getPostContentPath joins folder and filename', () => {
   assert.equal(
@@ -46,5 +46,39 @@ test('describeDeleteAction falls back to slug when title is blank', () => {
       'trunk',
     ).confirmLabel,
     'Delete “draft-post”?',
+  );
+});
+
+test('describePublishAction uses create wording when publishing a new post', () => {
+  assert.deepEqual(
+    describePublishAction({
+      slug: 'new-post',
+      ownerRepo: 'x-does/blog',
+      created: true,
+      bootstrappedSqlite: true,
+    }),
+    {
+      actionLabel: 'create',
+      successTitle: 'Created new-post',
+      successMessage: 'Created new-post in x-does/blog. Created the sqlite index automatically as part of the same publish.',
+      statusMessage: 'Created new-post.',
+    },
+  );
+});
+
+test('describePublishAction uses update wording for existing posts without bootstrap copy', () => {
+  assert.deepEqual(
+    describePublishAction({
+      slug: 'existing-post',
+      ownerRepo: 'x-does/blog',
+      created: false,
+      bootstrappedSqlite: false,
+    }),
+    {
+      actionLabel: 'update',
+      successTitle: 'Updated existing-post',
+      successMessage: 'Updated existing-post in x-does/blog.',
+      statusMessage: 'Updated existing-post.',
+    },
   );
 });

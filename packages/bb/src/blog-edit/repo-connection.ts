@@ -39,6 +39,7 @@ export function describePublishTarget(settings: RepoConnectionSettings & { slug:
   return {
     ownerRepo: `${settings.owner}/${settings.repo}`,
     branchLabel: settings.branch,
+    baseDirLabel: settings.baseDir,
     sqliteLabel: settings.sqlitePath,
     postPath: `${settings.baseDir}/${slug}/blog.md`,
   };

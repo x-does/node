@@ -71,6 +71,7 @@ test('describePublishTarget shows repo, branch, sqlite, and draft file path', ()
     {
       ownerRepo: 'x-does/blog',
       branchLabel: 'main',
+      baseDirLabel: 'blogs',
       sqliteLabel: 'blog.sqlite',
       postPath: 'blogs/new-post/blog.md',
     },
