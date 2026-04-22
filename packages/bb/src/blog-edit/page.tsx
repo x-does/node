@@ -488,12 +488,16 @@ export default function BlogEditApp() {
     if (!requestedSlug) return;
     const existing = posts.find((post) => post.slug === requestedSlug);
     if (existing) {
-      void openPostInEditor(existing);
+      void (async () => {
+        await openPostInEditor(existing);
+        setRequestedSlug('');
+      })();
       return;
     }
 
     void (async () => {
       await loadPostsFromRepo();
+      setRequestedSlug('');
     })();
   }, [requestedSlug, posts]);
 
@@ -594,6 +598,19 @@ export default function BlogEditApp() {
 
   function startAuth() {
     window.open('/api/blog-edit/auth/start', 'blogedit-auth', 'width=640,height=760');
+  }
+
+  function resetEditorDraft(clearPosts = false) {
+    setActiveSlug('');
+    setTitle('');
+    setDescription('');
+    setTags('');
+    setRefs('');
+    setLinks('');
+    setMarkdown('# New post\n\nStart writing...');
+    if (clearPosts) {
+      setPosts([]);
+    }
   }
 
   function wrapSelection(before: string, after = '') {
@@ -806,12 +823,15 @@ export default function BlogEditApp() {
     if (!full) return;
     const selected = repos.find((r) => r.full_name === full);
     const nextSettings = getSettingsForSelectedRepo(settings, full, selected);
+    resetEditorDraft(true);
     setSettings(nextSettings);
     setTab(shouldLoadPosts ? 'posts' : 'editor');
     notify(
       'success',
-      `Selected ${full}${selected?.default_branch ? ` on ${selected.default_branch}` : ''}.`,
-      `Selected repo: ${full}${selected?.default_branch ? ` @ ${selected.default_branch}` : ''}.`,
+      shouldLoadPosts
+        ? `Selected ${full}${selected?.default_branch ? ` on ${selected.default_branch}` : ''} and cleared the editor so you can load posts from the new workspace.`
+        : `Selected ${full}${selected?.default_branch ? ` on ${selected.default_branch}` : ''} and reset the editor to a fresh draft for this workspace.`,
+      `Selected repo: ${full}${selected?.default_branch ? ` @ ${selected.default_branch}` : ''}. Editor state reset for the new workspace.`,
       'Repository selected',
     );
     if (shouldLoadPosts) {
@@ -823,28 +843,22 @@ export default function BlogEditApp() {
     const parsed = parseRepositoryInput(repoLocator);
     if (!parsed) {
       notify('error', 'Enter owner/repo or a full GitHub repo URL.', 'Repository locator is invalid.', 'Invalid repository locator');
-      setTab('settings');
       return;
     }
 
+    resetEditorDraft(true);
     setSettings((s) => ({ ...s, owner: parsed.owner, repo: parsed.repo }));
     setTab('editor');
     notify(
       'success',
-      `Selected ${parsed.owner}/${parsed.repo}. Review the target card, then load posts or publish from the editor.`,
-      `Selected repo: ${parsed.owner}/${parsed.repo}.`,
+      `Selected ${parsed.owner}/${parsed.repo} and reset the editor to a fresh draft. Review the target card, then load posts or publish from this workspace.`,
+      `Selected repo: ${parsed.owner}/${parsed.repo}. Editor state reset for the new workspace.`,
       'Repository selected',
     );
   }
 
   function startNewDraft() {
-    setActiveSlug('');
-    setTitle('');
-    setDescription('');
-    setTags('');
-    setRefs('');
-    setLinks('');
-    setMarkdown('# New post\n\nStart writing...');
+    resetEditorDraft();
     setTab('editor');
     notify('info', 'Started a fresh draft in the editor.', 'Started a new draft.', 'New draft');
   }
@@ -966,7 +980,7 @@ export default function BlogEditApp() {
 
       setPosts((current) => current.filter((item) => item.slug !== post.slug));
       if (activeSlug === post.slug) {
-        setActiveSlug('');
+        resetEditorDraft();
       }
       notify('success', deleteCopy.successMessage, `Deleted ${post.slug}.`, `Deleted ${post.slug}`);
     } catch (e) {
@@ -1013,6 +1027,12 @@ export default function BlogEditApp() {
     selectedRepoIsListed: Boolean(selectedRepoCard),
   });
   const selectedPostMeta = posts.find((post) => post.slug === activeSlug);
+  const workspacePrimaryAction =
+    repoWorkflow.primaryAction === 'connect'
+      ? startAuth
+      : repoWorkflow.primaryAction === 'loadRepos'
+        ? loadRepos
+        : () => void loadPostsFromRepo();
 
   return (
     <div className={fullscreen ? 'fixed inset-0 z-50 overflow-auto bg-[#07060c] p-6' : ''}>
@@ -1031,154 +1051,144 @@ export default function BlogEditApp() {
         <div className="mt-5 flex flex-wrap gap-2">
           <button type="button" onClick={() => setTab('editor')} className={btn(tab === 'editor')} aria-pressed={tab === 'editor'}>Editor</button>
           <button type="button" onClick={() => setTab('posts')} className={btn(tab === 'posts')} aria-pressed={tab === 'posts'}>Posts</button>
-          <button type="button" onClick={() => setTab('settings')} className={btn(tab === 'settings')} aria-pressed={tab === 'settings'}>Settings</button>
         </div>
 
         <div className="mt-6 rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/55 p-4 text-sm text-[#c7bbdc]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <div>GitHub: <strong>{token ? `connected${authedUser ? ` as ${authedUser}` : ''}` : 'not connected'}</strong></div>
-                <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-xs text-[#b9accf]">
-                  {repos.length > 0 ? `${filteredRepos.length}/${repos.length} writable repos visible` : 'load repos to browse targets'}
-                </span>
-                <span className={`rounded-full border px-2 py-0.5 text-xs ${workflowBadgeClassName(repoWorkflow.tone)}`}>
-                  {repoWorkflow.badge}
-                </span>
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-[0.18em] text-[#8ea6e8]">Selected repository workspace</div>
-                <div className="mt-1 text-lg font-semibold text-[#efe8ff]">{repoWorkspace.ownerRepo}</div>
-                <div className="mt-1 text-[#aa9ac5]">{selectedRepoSummary}</div>
-              </div>
-              <div className="rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/80 p-3">
-                <div className="text-sm font-semibold text-[#efe8ff]">{repoWorkflow.headline}</div>
-                <div className="mt-1 text-xs text-[#b9accf]">{repoWorkflow.detail}</div>
-                <div className="mt-2 text-xs text-[#8f80aa]">Latest activity: {statusText}</div>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={startAuth} className={btn(false)} disabled={loading}>{token ? 'Re-auth GitHub' : 'Connect GitHub'}</button>
-              <button
-                type="button"
-                onClick={repoWorkflow.primaryActionLabel === 'Load writable repos' ? loadRepos : () => void loadPostsFromRepo()}
-                className={btn(false)}
-                disabled={loading || (repoWorkflow.primaryActionLabel === 'Load writable repos' && !token)}
-              >
-                {repoWorkflow.primaryActionLabel}
-              </button>
-              <button type="button" onClick={() => setTab('settings')} className={btn(tab === 'settings')} disabled={loading}>Advanced settings</button>
-              <button type="button" onClick={() => setFullscreen((v) => !v)} className={btn(false)} disabled={loading} title="Ctrl+Shift+F">Fullscreen</button>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
-            <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3 text-xs text-[#cdbfe4]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Publish target</div>
-                  <div className="mt-1 text-[#cdbfe4]">{repoWorkspace.detailLine}</div>
-                  <div className="mt-1 text-[#8f80aa]">Next step: {repoWorkspace.nextStep}</div>
+          <div className="rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/80 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className={`rounded-full border px-2 py-0.5 text-xs ${workflowBadgeClassName(repoWorkflow.tone)}`}>
+                    {repoWorkflow.badge}
+                  </span>
+                  <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-xs text-[#b9accf]">
+                    GitHub {token ? `connected${authedUser ? ` as ${authedUser}` : ''}` : 'not connected'}
+                  </span>
+                  <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-xs text-[#b9accf]">
+                    {repos.length > 0 ? `${filteredRepos.length}/${repos.length} writable repos visible` : 'browse repos after loading'}
+                  </span>
                 </div>
+                <div>
+                  <div className="text-xs uppercase tracking-[0.18em] text-[#8ea6e8]">Workspace</div>
+                  <div className="mt-1 text-lg font-semibold text-[#efe8ff]">{repoWorkspace.ownerRepo}</div>
+                  <div className="mt-1 text-[#aa9ac5]">{selectedRepoSummary}</div>
+                  <div className="mt-2 text-xs text-[#cdbfe4]">{repoWorkspace.detailLine}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-[#efe8ff]">{repoWorkflow.headline}</div>
+                  <div className="mt-1 text-xs text-[#b9accf]">{repoWorkflow.detail}</div>
+                  <div className="mt-2 text-xs text-[#8f80aa]">{repoWorkspace.nextStep}</div>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={workspacePrimaryAction}
+                  className={btn(false)}
+                  disabled={loading || (repoWorkflow.primaryAction === 'loadRepos' && !token)}
+                >
+                  {repoWorkflow.primaryActionLabel}
+                </button>
                 <button type="button" className={miniBtn} onClick={startNewDraft} disabled={loading}>New draft</button>
-              </div>
-              <div className="mt-3 grid gap-2 md:grid-cols-2">
-                <div>
-                  <div className="text-[#9c8db7]">Branch</div>
-                  <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
-                </div>
-                <div>
-                  <div className="text-[#9c8db7]">Content directory</div>
-                  <div className="font-medium text-[#efe8ff]">{publishTarget.baseDirLabel}</div>
-                </div>
-                <div>
-                  <div className="text-[#9c8db7]">SQLite index</div>
-                  <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
-                </div>
-                <div>
-                  <div className="text-[#9c8db7]">Next post file</div>
-                  <div className="font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
-                </div>
-              </div>
-              <div className="mt-4 rounded-lg border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#b9accf]">
-                {activeSlug ? (
-                  <>
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Current post</div>
-                    <div className="mt-1 font-semibold text-[#efe8ff]">{selectedPostMeta?.title || activeSlug}</div>
-                    <div className="mt-1 text-[#aa9ac5]">Slug: {activeSlug}</div>
-                  </>
-                ) : (
-                  <>
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Current post</div>
-                    <div className="mt-1 font-semibold text-[#efe8ff]">New draft</div>
-                    <div className="mt-1 text-[#aa9ac5]">Publishing will create a new post using the title-derived slug shown above.</div>
-                  </>
-                )}
+                <button type="button" className={miniBtn} onClick={() => setTab('settings')} disabled={loading}>Advanced settings</button>
+                <button type="button" className={miniBtn} onClick={() => setFullscreen((v) => !v)} disabled={loading} title="Ctrl+Shift+F">Fullscreen</button>
               </div>
             </div>
 
-            <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3 text-xs text-[#cdbfe4]">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Switch workspace</div>
-                  <div className="mt-1 text-[#aa9ac5]">Pick a repo card to switch and load posts, or paste a locator for a repo that is not listed.</div>
+            <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+              <div className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Publish target</div>
+                    <div className="mt-1 text-[#8f80aa]">Next post file</div>
+                    <div className="font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
+                  </div>
+                  <div className="rounded-lg border border-[#7f6b9d]/15 bg-[#0d0a15]/70 px-3 py-2 text-right">
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Current post</div>
+                    <div className="mt-1 font-semibold text-[#efe8ff]">{activeSlug ? selectedPostMeta?.title || activeSlug : 'New draft'}</div>
+                    <div className="mt-1 text-[#aa9ac5]">{activeSlug ? `Slug: ${activeSlug}` : 'Publishing uses the title-derived slug above.'}</div>
+                  </div>
                 </div>
-                <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
+                <div className="mt-3 grid gap-2 md:grid-cols-3">
+                  <div>
+                    <div className="text-[#9c8db7]">Branch</div>
+                    <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
+                  </div>
+                  <div>
+                    <div className="text-[#9c8db7]">Content directory</div>
+                    <div className="font-medium text-[#efe8ff]">{publishTarget.baseDirLabel}</div>
+                  </div>
+                  <div>
+                    <div className="text-[#9c8db7]">SQLite index</div>
+                    <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
+                  </div>
+                </div>
+                <div className="mt-3 text-xs text-[#8f80aa]">Latest activity: {statusText}</div>
               </div>
-              <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_200px]">
-                <input
-                  className={input}
-                  placeholder="Search writable repos by owner, repo, or description"
-                  value={repoQuery}
-                  onChange={(e) => setRepoQuery(e.target.value)}
-                />
-                <button type="button" className={btn(false)} onClick={loadRepos} disabled={!token || loading}>Reload repos</button>
-              </div>
-              <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
-                <input
-                  className={input}
-                  placeholder="x-does/blog or https://github.com/x-does/blog"
-                  value={repoLocator}
-                  onChange={(e) => setRepoLocator(e.target.value)}
-                />
-                <button type="button" className={btn(false)} onClick={applyRepoLocator} disabled={loading}>Use locator</button>
-              </div>
-              {repos.length > 0 ? (
-                <div className="mt-3 grid gap-2 md:grid-cols-2">
-                  {filteredRepos.slice(0, 8).map((r) => (
-                    <button
-                      key={r.id}
-                      type="button"
-                      className={`rounded-xl border p-3 text-left transition hover:border-[#a58ac8]/55 hover:bg-[#171123] ${
-                        publishTarget.ownerRepo === r.full_name
-                          ? 'border-[#a58ac8]/60 bg-[#171123]'
-                          : 'border-[#7f6b9d]/25 bg-[#110d19]/45'
-                      }`}
-                      onClick={() => applySelectedRepo(r.full_name, true)}
-                    >
-                      <div className="flex flex-wrap items-center gap-2">
-                        <strong className="text-[#efe8ff]">{r.full_name}</strong>
-                        <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">{r.default_branch}</span>
-                        {r.private ? <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">private</span> : null}
+
+              <div className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Switch workspace</div>
+                    <div className="mt-1 text-[#aa9ac5]">Choose a writable repo card, or paste a locator for a repo that is not listed.</div>
+                  </div>
+                  <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
+                </div>
+                <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+                  <input
+                    className={input}
+                    placeholder="Search writable repos"
+                    value={repoQuery}
+                    onChange={(e) => setRepoQuery(e.target.value)}
+                  />
+                  <button type="button" className={miniBtn} onClick={loadRepos} disabled={!token || loading}>Reload repos</button>
+                </div>
+                <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+                  <input
+                    className={input}
+                    placeholder="x-does/blog or https://github.com/x-does/blog"
+                    value={repoLocator}
+                    onChange={(e) => setRepoLocator(e.target.value)}
+                  />
+                  <button type="button" className={miniBtn} onClick={applyRepoLocator} disabled={loading}>Use locator</button>
+                </div>
+                {repos.length > 0 ? (
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {filteredRepos.slice(0, 8).map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        className={`rounded-xl border p-3 text-left transition hover:border-[#a58ac8]/55 hover:bg-[#171123] ${
+                          publishTarget.ownerRepo === r.full_name
+                            ? 'border-[#a58ac8]/60 bg-[#171123]'
+                            : 'border-[#7f6b9d]/25 bg-[#110d19]/45'
+                        }`}
+                        onClick={() => applySelectedRepo(r.full_name, true)}
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <strong className="text-[#efe8ff]">{r.full_name}</strong>
+                          <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">{r.default_branch}</span>
+                          {r.private ? <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">private</span> : null}
+                        </div>
+                        {r.description ? <div className="mt-1 text-xs text-[#b9accf]">{r.description}</div> : null}
+                        <div className="mt-2 text-xs text-[#8ea6e8]">{publishTarget.ownerRepo === r.full_name ? 'Selected workspace' : 'Select repo and load posts'}</div>
+                      </button>
+                    ))}
+                    {filteredRepos.length === 0 ? (
+                      <div className="rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
+                        No writable repos match that search. You can still paste owner/repo above.
                       </div>
-                      {r.description ? <div className="mt-1 text-xs text-[#b9accf]">{r.description}</div> : null}
-                      <div className="mt-2 text-xs text-[#8ea6e8]">{publishTarget.ownerRepo === r.full_name ? 'Selected target' : 'Select repo and open posts'}</div>
-                    </button>
-                  ))}
-                  {filteredRepos.length === 0 ? (
-                    <div className="rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
-                      No writable repos match that search. You can still paste owner/repo above or adjust advanced settings.
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="mt-3 rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
-                  Load writable repos to browse targets, or paste an owner/repo locator above.
-                </div>
-              )}
-              {filteredRepos.length > 8 ? (
-                <div className="mt-2 text-xs text-[#9c8db7]">Showing first 8 matches here. Open settings or narrow search if you need a different repo.</div>
-              ) : null}
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="mt-3 rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
+                    Load writable repos to browse targets, or paste an owner/repo locator above.
+                  </div>
+                )}
+                {filteredRepos.length > 8 ? (
+                  <div className="mt-2 text-xs text-[#9c8db7]">Showing first 8 matches here. Narrow search if you need a different repo.</div>
+                ) : null}
+              </div>
             </div>
           </div>
         </div>
@@ -1317,32 +1327,15 @@ export default function BlogEditApp() {
         {tab === 'settings' && (
           <div className="mt-6 grid gap-3">
             <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-3 text-sm text-[#c7bbdc]">
-              <div className="font-semibold text-[#efe8ff]">Repository connection settings</div>
-              <div className="mt-1 text-xs text-[#aa9ac5]">Paste owner/repo or a GitHub URL, then confirm the target preview before publishing.</div>
+              <div className="font-semibold text-[#efe8ff]">Advanced publish settings</div>
+              <div className="mt-1 text-xs text-[#aa9ac5]">Repository selection lives in the workspace card above. Use this area only for branch, base directory, or sqlite overrides.</div>
             </div>
-            <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-3 text-sm text-[#c7bbdc]">
-              <label className={label}>
-                Repository locator
-                <input
-                  className={input}
-                  value={repoLocator}
-                  onChange={(e) => setRepoLocator(e.target.value)}
-                  placeholder="x-does/blog or https://github.com/x-does/blog"
-                />
-              </label>
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <button type="button" className={btn(false)} onClick={applyRepoLocator}>Apply repo locator</button>
-                <span className="text-xs text-[#aa9ac5]">Branch, base dir, and sqlite path stay as-is.</span>
-              </div>
-            </div>
-            <label className={label}>Owner<input className={input} value={settings.owner} onChange={(e) => setSettings((s) => ({ ...s, owner: e.target.value.trim() }))} /></label>
-            <label className={label}>Repo<input className={input} value={settings.repo} onChange={(e) => setSettings((s) => ({ ...s, repo: e.target.value.trim() }))} /></label>
             <label className={label}>Branch<input className={input} value={settings.branch} onChange={(e) => setSettings((s) => ({ ...s, branch: e.target.value.trim() }))} /></label>
             <label className={label}>Blogs base directory<input className={input} value={settings.baseDir} onChange={(e) => setSettings((s) => ({ ...s, baseDir: e.target.value.trim() }))} /></label>
             <label className={label}>SQLite path<input className={input} value={settings.sqlitePath} onChange={(e) => setSettings((s) => ({ ...s, sqlitePath: e.target.value.trim() }))} /></label>
             <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3 text-xs text-[#cdbfe4]">
-              <div className="font-semibold text-[#efe8ff]">Advanced target settings</div>
-              <div className="mt-1 text-[#aa9ac5]">Use this area only for branch, base directory, or sqlite overrides. Repository selection and repo loading stay in the workspace card above.</div>
+              <div className="font-semibold text-[#efe8ff]">Current target</div>
+              <div className="mt-1 text-[#aa9ac5]">Publishing is currently pointed at {settings.owner}/{settings.repo} on {settings.branch}. Change repositories from the workspace switcher above, then come back here only if you need a path override.</div>
             </div>
           </div>
         )}

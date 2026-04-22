@@ -94,7 +94,7 @@ test('describePublishTarget falls back to a draft slug when slug is empty', () =
   );
 });
 
-test('describeRepoWorkspace summarizes the selected workspace when repos are loaded', () => {
+test('describeRepoWorkspace summarizes the selected workspace with tighter target details', () => {
   assert.deepEqual(
     describeRepoWorkspace({
       owner: 'x-does',
@@ -107,13 +107,13 @@ test('describeRepoWorkspace summarizes the selected workspace when repos are loa
     }),
     {
       ownerRepo: 'x-does/blog',
-      detailLine: 'Branch main • Base dir content/posts • SQLite data/blog.sqlite',
-      nextStep: 'Pick a repository from the list, or paste a repository locator to switch workspaces.',
+      detailLine: 'main branch • content/posts • data/blog.sqlite',
+      nextStep: 'Switch workspaces below, or keep publishing from this repo.',
     },
   );
 });
 
-test('describeRepoWorkspace prompts for a token before repo data is available', () => {
+test('describeRepoWorkspace prompts for GitHub auth before browsing writable repos', () => {
   assert.deepEqual(
     describeRepoWorkspace({
       owner: 'x-does',
@@ -124,7 +124,7 @@ test('describeRepoWorkspace prompts for a token before repo data is available', 
       hasToken: false,
       hasLoadedRepos: false,
     }).nextStep,
-    'Add a GitHub token to load writable repositories or paste a repository locator.',
+    'Connect GitHub to browse writable repos, or paste a repository locator.',
   );
 });
 
@@ -139,7 +139,64 @@ test('describeRepoWorkspace prompts to load repositories after auth is ready', (
       hasToken: true,
       hasLoadedRepos: false,
     }).nextStep,
-    'Load writable repositories, or paste a repository locator to choose a different workspace.',
+    'Load writable repos to browse workspace cards, or paste a repository locator.',
+  );
+});
+
+test('describeRepoWorkflowState explains the disconnected auth state', () => {
+  assert.deepEqual(
+    describeRepoWorkflowState({
+      ownerRepo: 'x-does/blog',
+      hasToken: false,
+      hasLoadedRepos: false,
+      selectedRepoIsListed: false,
+    }),
+    {
+      tone: 'info',
+      badge: 'Connect GitHub',
+      headline: 'Publishing is pointed at x-does/blog, but GitHub auth is still disconnected.',
+      detail: 'Connect GitHub to browse writable repositories, publish changes, and sync the selected workspace with one click.',
+      primaryAction: 'connect',
+      primaryActionLabel: 'Connect GitHub',
+    },
+  );
+});
+
+test('describeRepoWorkflowState explains the load repos state after auth', () => {
+  assert.deepEqual(
+    describeRepoWorkflowState({
+      ownerRepo: 'x-does/blog',
+      hasToken: true,
+      hasLoadedRepos: false,
+      selectedRepoIsListed: false,
+    }),
+    {
+      tone: 'info',
+      badge: 'Load repos',
+      headline: 'GitHub is connected. Load writable repositories to confirm that x-does/blog is the right workspace.',
+      detail: 'You can keep using the manual locator, but loading repos makes it easier to switch workspaces and open posts without touching advanced settings.',
+      primaryAction: 'loadRepos',
+      primaryActionLabel: 'Load writable repos',
+    },
+  );
+});
+
+test('describeRepoWorkflowState explains manual locator targets separately', () => {
+  assert.deepEqual(
+    describeRepoWorkflowState({
+      ownerRepo: 'sav/manual-blog',
+      hasToken: true,
+      hasLoadedRepos: true,
+      selectedRepoIsListed: false,
+    }),
+    {
+      tone: 'info',
+      badge: 'Manual target',
+      headline: 'sav/manual-blog is currently selected via the manual locator.',
+      detail: 'Refresh posts to verify this target, or choose a repository card below if you want to switch back to a known writable workspace.',
+      primaryAction: 'refreshPosts',
+      primaryActionLabel: 'Refresh posts',
+    },
   );
 });
 
@@ -157,19 +214,8 @@ test('describeRepoWorkflowState explains the connected happy path', () => {
       headline: 'x-does/blog is selected and ready for create, update, and delete actions.',
       detail:
         'Use Refresh posts to sync the current repo, then keep publishing from the editor without revisiting advanced settings.',
+      primaryAction: 'refreshPosts',
       primaryActionLabel: 'Refresh posts',
     },
-  );
-});
-
-test('describeRepoWorkflowState explains manual locator targets separately', () => {
-  assert.deepEqual(
-    describeRepoWorkflowState({
-      ownerRepo: 'sav/manual-blog',
-      hasToken: true,
-      hasLoadedRepos: true,
-      selectedRepoIsListed: false,
-    }).badge,
-    'Manual target',
   );
 });

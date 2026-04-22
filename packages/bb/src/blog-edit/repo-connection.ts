@@ -48,16 +48,16 @@ export function describePublishTarget(settings: RepoConnectionSettings & { slug:
 export function describeRepoWorkspace(
   settings: RepoConnectionSettings & { hasToken: boolean; hasLoadedRepos: boolean },
 ) {
-  let nextStep = 'Pick a repository from the list, or paste a repository locator to switch workspaces.';
+  let nextStep = 'Switch workspaces below, or keep publishing from this repo.';
   if (!settings.hasToken) {
-    nextStep = 'Add a GitHub token to load writable repositories or paste a repository locator.';
+    nextStep = 'Connect GitHub to browse writable repos, or paste a repository locator.';
   } else if (!settings.hasLoadedRepos) {
-    nextStep = 'Load writable repositories, or paste a repository locator to choose a different workspace.';
+    nextStep = 'Load writable repos to browse workspace cards, or paste a repository locator.';
   }
 
   return {
     ownerRepo: `${settings.owner}/${settings.repo}`,
-    detailLine: `Branch ${settings.branch} • Base dir ${settings.baseDir} • SQLite ${settings.sqlitePath}`,
+    detailLine: `${settings.branch} branch • ${settings.baseDir} • ${settings.sqlitePath}`,
     nextStep,
   };
 }
@@ -74,6 +74,7 @@ export function describeRepoWorkflowState(args: {
       badge: 'Connect GitHub',
       headline: `Publishing is pointed at ${args.ownerRepo}, but GitHub auth is still disconnected.`,
       detail: 'Connect GitHub to browse writable repositories, publish changes, and sync the selected workspace with one click.',
+      primaryAction: 'connect' as const,
       primaryActionLabel: 'Connect GitHub',
     };
   }
@@ -84,6 +85,7 @@ export function describeRepoWorkflowState(args: {
       badge: 'Load repos',
       headline: `GitHub is connected. Load writable repositories to confirm that ${args.ownerRepo} is the right workspace.`,
       detail: 'You can keep using the manual locator, but loading repos makes it easier to switch workspaces and open posts without touching advanced settings.',
+      primaryAction: 'loadRepos' as const,
       primaryActionLabel: 'Load writable repos',
     };
   }
@@ -94,6 +96,7 @@ export function describeRepoWorkflowState(args: {
       badge: 'Manual target',
       headline: `${args.ownerRepo} is currently selected via the manual locator.`,
       detail: 'Refresh posts to verify this target, or choose a repository card below if you want to switch back to a known writable workspace.',
+      primaryAction: 'refreshPosts' as const,
       primaryActionLabel: 'Refresh posts',
     };
   }
@@ -103,6 +106,7 @@ export function describeRepoWorkflowState(args: {
     badge: 'Workspace ready',
     headline: `${args.ownerRepo} is selected and ready for create, update, and delete actions.`,
     detail: 'Use Refresh posts to sync the current repo, then keep publishing from the editor without revisiting advanced settings.',
+    primaryAction: 'refreshPosts' as const,
     primaryActionLabel: 'Refresh posts',
   };
 }
