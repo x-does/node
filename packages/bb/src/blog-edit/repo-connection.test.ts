@@ -94,7 +94,7 @@ test('describePublishTarget falls back to a draft slug when slug is empty', () =
   );
 });
 
-test('describeRepoWorkspace summarizes the selected workspace with tighter target details', () => {
+test('describeRepoWorkspace summarizes the selected workspace with clearer source and publish details', () => {
   assert.deepEqual(
     describeRepoWorkspace({
       owner: 'x-does',
@@ -104,11 +104,64 @@ test('describeRepoWorkspace summarizes the selected workspace with tighter targe
       sqlitePath: 'data/blog.sqlite',
       hasToken: true,
       hasLoadedRepos: true,
+      hasWritableRepos: true,
+      selectedRepoIsListed: true,
     }),
     {
       ownerRepo: 'x-does/blog',
-      detailLine: 'main branch • content/posts • data/blog.sqlite',
-      nextStep: 'Switch workspaces below, or keep publishing from this repo.',
+      selectionLabel: 'Selected workspace',
+      selectionDetail: 'Chosen from your writable repo list.',
+      publishDetail: 'main branch • content/posts • data/blog.sqlite',
+      nextStep: 'Refresh posts when you want to sync this workspace, or choose another repo below.',
+      settingsHint: 'Advanced settings stay focused on branch and path overrides.',
+    },
+  );
+});
+
+test('describeRepoWorkspace marks manual repo targets separately once repos are loaded', () => {
+  assert.deepEqual(
+    describeRepoWorkspace({
+      owner: 'sav',
+      repo: 'manual-blog',
+      branch: 'main',
+      baseDir: 'content/posts',
+      sqlitePath: 'data/blog.sqlite',
+      hasToken: true,
+      hasLoadedRepos: true,
+      hasWritableRepos: true,
+      selectedRepoIsListed: false,
+    }),
+    {
+      ownerRepo: 'sav/manual-blog',
+      selectionLabel: 'Manual target',
+      selectionDetail: 'Typed in with the repository locator instead of a repo card.',
+      publishDetail: 'main branch • content/posts • data/blog.sqlite',
+      nextStep: 'Refresh posts to verify this target, or switch back to a listed writable repo below.',
+      settingsHint: 'Advanced settings stay focused on branch and path overrides.',
+    },
+  );
+});
+
+test('describeRepoWorkspace explains manual locator fallback when repo loading returns zero writable repos', () => {
+  assert.deepEqual(
+    describeRepoWorkspace({
+      owner: 'sav',
+      repo: 'manual-blog',
+      branch: 'main',
+      baseDir: 'content/posts',
+      sqlitePath: 'data/blog.sqlite',
+      hasToken: true,
+      hasLoadedRepos: true,
+      hasWritableRepos: false,
+      selectedRepoIsListed: false,
+    }),
+    {
+      ownerRepo: 'sav/manual-blog',
+      selectionLabel: 'Manual target',
+      selectionDetail: 'Using the repository locator because no writable repo cards were returned.',
+      publishDetail: 'main branch • content/posts • data/blog.sqlite',
+      nextStep: 'Refresh posts to verify this target, or reload writable repos after updating GitHub access.',
+      settingsHint: 'Advanced settings stay focused on branch and path overrides.',
     },
   );
 });
@@ -123,8 +176,10 @@ test('describeRepoWorkspace prompts for GitHub auth before browsing writable rep
       sqlitePath: 'data/blog.sqlite',
       hasToken: false,
       hasLoadedRepos: false,
+      hasWritableRepos: false,
+      selectedRepoIsListed: false,
     }).nextStep,
-    'Connect GitHub to browse writable repos, or paste a repository locator.',
+    'Connect GitHub to browse writable repos, or keep using the repository locator.',
   );
 });
 
@@ -138,8 +193,10 @@ test('describeRepoWorkspace prompts to load repositories after auth is ready', (
       sqlitePath: 'data/blog.sqlite',
       hasToken: true,
       hasLoadedRepos: false,
+      hasWritableRepos: false,
+      selectedRepoIsListed: false,
     }).nextStep,
-    'Load writable repos to browse workspace cards, or paste a repository locator.',
+    'Load writable repos to confirm this workspace, or keep using the repository locator.',
   );
 });
 
@@ -149,6 +206,7 @@ test('describeRepoWorkflowState explains the disconnected auth state', () => {
       ownerRepo: 'x-does/blog',
       hasToken: false,
       hasLoadedRepos: false,
+      hasWritableRepos: false,
       selectedRepoIsListed: false,
     }),
     {
@@ -168,6 +226,7 @@ test('describeRepoWorkflowState explains the load repos state after auth', () =>
       ownerRepo: 'x-does/blog',
       hasToken: true,
       hasLoadedRepos: false,
+      hasWritableRepos: false,
       selectedRepoIsListed: false,
     }),
     {
@@ -187,6 +246,7 @@ test('describeRepoWorkflowState explains manual locator targets separately', () 
       ownerRepo: 'sav/manual-blog',
       hasToken: true,
       hasLoadedRepos: true,
+      hasWritableRepos: true,
       selectedRepoIsListed: false,
     }),
     {
@@ -200,12 +260,34 @@ test('describeRepoWorkflowState explains manual locator targets separately', () 
   );
 });
 
+test('describeRepoWorkflowState explains when a repo load succeeds but returns zero writable repos', () => {
+  assert.deepEqual(
+    describeRepoWorkflowState({
+      ownerRepo: 'sav/manual-blog',
+      hasToken: true,
+      hasLoadedRepos: true,
+      hasWritableRepos: false,
+      selectedRepoIsListed: false,
+    }),
+    {
+      tone: 'info',
+      badge: 'No writable repos',
+      headline:
+        'GitHub is connected, but no writable repositories were returned. sav/manual-blog remains selected via the manual locator.',
+      detail: 'Refresh posts to verify this workspace, or reload repos after updating GitHub access.',
+      primaryAction: 'refreshPosts',
+      primaryActionLabel: 'Refresh posts',
+    },
+  );
+});
+
 test('describeRepoWorkflowState explains the connected happy path', () => {
   assert.deepEqual(
     describeRepoWorkflowState({
       ownerRepo: 'x-does/blog',
       hasToken: true,
       hasLoadedRepos: true,
+      hasWritableRepos: true,
       selectedRepoIsListed: true,
     }),
     {

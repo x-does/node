@@ -420,6 +420,7 @@ export default function BlogEditApp() {
   const [token, setToken] = useState('');
   const [authedUser, setAuthedUser] = useState('');
   const [repos, setRepos] = useState<Repo[]>([]);
+  const [hasLoadedRepos, setHasLoadedRepos] = useState(false);
   const [settings, setSettings] = useState<Settings>(defaultSettings);
   const [repoLocator, setRepoLocator] = useState(`${defaultSettings.owner}/${defaultSettings.repo}`);
 
@@ -442,6 +443,7 @@ export default function BlogEditApp() {
   const nextToastIdRef = useRef(0);
   const toastTimersRef = useRef<Map<number, number>>(new Map());
   const imagePickerRef = useRef<HTMLInputElement | null>(null);
+  const workspaceRevisionRef = useRef(0);
 
   const deferredMarkdown = useDeferredValue(markdown);
 
@@ -613,6 +615,10 @@ export default function BlogEditApp() {
     }
   }
 
+  function invalidateWorkspaceSelection() {
+    workspaceRevisionRef.current += 1;
+  }
+
   function wrapSelection(before: string, after = '') {
     const el = editorRef.current;
     if (!el) return;
@@ -698,6 +704,7 @@ export default function BlogEditApp() {
       );
       const writable = list.filter((r) => r.permissions?.push || r.permissions?.admin || r.permissions?.maintain);
       setRepos(writable);
+      setHasLoadedRepos(true);
       notify('success', `Loaded ${writable.length} writable repos.`, `Showing ${writable.length} writable repos.`);
     } catch (e) {
       notify('error', e instanceof Error ? e.message : 'failed to load repos', 'Failed to load writable repos.');
@@ -707,6 +714,7 @@ export default function BlogEditApp() {
   }
 
   async function loadPostsFromRepo(target = settings) {
+    const requestRevision = workspaceRevisionRef.current;
     setLoading(true);
     updateStatus(`Loading posts from ${target.owner}/${target.repo}...`);
 
@@ -735,6 +743,9 @@ export default function BlogEditApp() {
               updatedAt: String(item.updatedAt || ''),
             }))
           : [];
+        if (requestRevision !== workspaceRevisionRef.current) {
+          return;
+        }
         setPosts(items);
         updateStatus(`Loaded ${items.length} posts from the public blog index.`);
 
@@ -749,6 +760,9 @@ export default function BlogEditApp() {
       }
 
       if (!sqliteBytes) {
+        if (requestRevision !== workspaceRevisionRef.current) {
+          return;
+        }
         setPosts([]);
         notify('info', 'No sqlite index found yet in the selected repo.', 'No sqlite index found yet in the selected repo.');
         return;
@@ -763,6 +777,9 @@ export default function BlogEditApp() {
       stmt.free();
       db.close();
 
+      if (requestRevision !== workspaceRevisionRef.current) {
+        return;
+      }
       setPosts(items);
       updateStatus(`Loaded ${items.length} posts from ${ownerRepo}/${target.sqlitePath}.`);
 
@@ -781,6 +798,7 @@ export default function BlogEditApp() {
   }
 
   async function openPostInEditor(post: PostMeta, target = settings) {
+    const requestRevision = workspaceRevisionRef.current;
     setLoading(true);
     updateStatus(`Opening ${post.slug}...`);
     try {
@@ -798,11 +816,17 @@ export default function BlogEditApp() {
       }
 
       if (!file) {
+        if (requestRevision !== workspaceRevisionRef.current) {
+          return;
+        }
         notify('error', `Could not load ${postPath} from ${ownerRepo}.`, 'Could not load the selected post.');
         return;
       }
 
       const parsed = parseBlogDocument(file);
+      if (requestRevision !== workspaceRevisionRef.current) {
+        return;
+      }
       setTitle(post.title || parsed.title);
       setDescription(post.description || parsed.description);
       setTags(post.tags || parsed.tags);
@@ -823,6 +847,7 @@ export default function BlogEditApp() {
     if (!full) return;
     const selected = repos.find((r) => r.full_name === full);
     const nextSettings = getSettingsForSelectedRepo(settings, full, selected);
+    invalidateWorkspaceSelection();
     resetEditorDraft(true);
     setSettings(nextSettings);
     setTab(shouldLoadPosts ? 'posts' : 'editor');
@@ -846,6 +871,7 @@ export default function BlogEditApp() {
       return;
     }
 
+    invalidateWorkspaceSelection();
     resetEditorDraft(true);
     setSettings((s) => ({ ...s, owner: parsed.owner, repo: parsed.repo }));
     setTab('editor');
@@ -1010,23 +1036,32 @@ export default function BlogEditApp() {
     ...settings,
     slug: activeSlug || toSlug(title) || 'draft-post',
   });
+  const selectedRepoLabel = `${settings.owner}/${settings.repo}`;
+  const selectedRepoCard = repos.find((repo) => repo.full_name === selectedRepoLabel);
+  const hasWritableRepos = repos.length > 0;
+  const selectedRepoIsListed = Boolean(selectedRepoCard);
   const repoWorkspace = describeRepoWorkspace({
     ...settings,
     hasToken: Boolean(token),
-    hasLoadedRepos: repos.length > 0,
+    hasLoadedRepos,
+    hasWritableRepos,
+    selectedRepoIsListed,
   });
-  const selectedRepoLabel = `${settings.owner}/${settings.repo}`;
-  const selectedRepoCard = repos.find((repo) => repo.full_name === selectedRepoLabel);
   const selectedRepoSummary =
     selectedRepoCard?.description?.trim() ||
     'Posts publish into the selected repo using the current branch, base directory, and sqlite path.';
   const repoWorkflow = describeRepoWorkflowState({
     ownerRepo: selectedRepoLabel,
     hasToken: Boolean(token),
-    hasLoadedRepos: repos.length > 0,
-    selectedRepoIsListed: Boolean(selectedRepoCard),
+    hasLoadedRepos,
+    hasWritableRepos,
+    selectedRepoIsListed,
   });
   const selectedPostMeta = posts.find((post) => post.slug === activeSlug);
+  const workspaceSwitcherTitle = hasLoadedRepos ? 'Switch workspace' : 'Choose workspace';
+  const workspaceSwitcherDescription = hasLoadedRepos
+    ? 'Pick a writable repo card, or use the locator when the repo is not listed.'
+    : 'Use the primary action to load writable repos, or paste a repository locator to keep moving.';
   const workspacePrimaryAction =
     repoWorkflow.primaryAction === 'connect'
       ? startAuth
@@ -1065,14 +1100,18 @@ export default function BlogEditApp() {
                     GitHub {token ? `connected${authedUser ? ` as ${authedUser}` : ''}` : 'not connected'}
                   </span>
                   <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-xs text-[#b9accf]">
-                    {repos.length > 0 ? `${filteredRepos.length}/${repos.length} writable repos visible` : 'browse repos after loading'}
+                    {hasLoadedRepos ? `${filteredRepos.length}/${repos.length} writable repos visible` : 'browse repos after loading'}
+                  </span>
+                  <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-xs text-[#b9accf]">
+                    {repoWorkspace.selectionLabel}
                   </span>
                 </div>
                 <div>
                   <div className="text-xs uppercase tracking-[0.18em] text-[#8ea6e8]">Workspace</div>
                   <div className="mt-1 text-lg font-semibold text-[#efe8ff]">{repoWorkspace.ownerRepo}</div>
                   <div className="mt-1 text-[#aa9ac5]">{selectedRepoSummary}</div>
-                  <div className="mt-2 text-xs text-[#cdbfe4]">{repoWorkspace.detailLine}</div>
+                  <div className="mt-2 text-xs text-[#cdbfe4]">{repoWorkspace.selectionDetail}</div>
+                  <div className="mt-1 text-xs text-[#8f80aa]">{repoWorkspace.publishDetail}</div>
                 </div>
                 <div>
                   <div className="text-sm font-semibold text-[#efe8ff]">{repoWorkflow.headline}</div>
@@ -1090,12 +1129,11 @@ export default function BlogEditApp() {
                   {repoWorkflow.primaryActionLabel}
                 </button>
                 <button type="button" className={miniBtn} onClick={startNewDraft} disabled={loading}>New draft</button>
-                <button type="button" className={miniBtn} onClick={() => setTab('settings')} disabled={loading}>Advanced settings</button>
                 <button type="button" className={miniBtn} onClick={() => setFullscreen((v) => !v)} disabled={loading} title="Ctrl+Shift+F">Fullscreen</button>
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+            <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
               <div className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div>
@@ -1123,16 +1161,26 @@ export default function BlogEditApp() {
                     <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
                   </div>
                 </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#7f6b9d]/15 pt-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Advanced overrides</div>
+                    <div className="mt-1 text-[#8f80aa]">{repoWorkspace.settingsHint}</div>
+                  </div>
+                  <button type="button" className={miniBtn} onClick={() => setTab('settings')} disabled={loading}>Advanced settings</button>
+                </div>
                 <div className="mt-3 text-xs text-[#8f80aa]">Latest activity: {statusText}</div>
               </div>
 
               <div className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Switch workspace</div>
-                    <div className="mt-1 text-[#aa9ac5]">Choose a writable repo card, or paste a locator for a repo that is not listed.</div>
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">{workspaceSwitcherTitle}</div>
+                    <div className="mt-1 text-[#aa9ac5]">{workspaceSwitcherDescription}</div>
                   </div>
-                  <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
+                    <button type="button" className={miniBtn} onClick={loadRepos} disabled={!token || loading}>Reload repos</button>
+                  </div>
                 </div>
                 <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
                   <input
@@ -1140,8 +1188,11 @@ export default function BlogEditApp() {
                     placeholder="Search writable repos"
                     value={repoQuery}
                     onChange={(e) => setRepoQuery(e.target.value)}
+                    disabled={!hasLoadedRepos}
                   />
-                  <button type="button" className={miniBtn} onClick={loadRepos} disabled={!token || loading}>Reload repos</button>
+                  <div className="rounded-lg border border-dashed border-[#7f6b9d]/20 px-3 py-2 text-[11px] text-[#8f80aa]">
+                    {hasLoadedRepos ? 'Repo cards below update as you search.' : 'Repo cards appear here after you load writable repos.'}
+                  </div>
                 </div>
                 <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
                   <input
@@ -1152,7 +1203,7 @@ export default function BlogEditApp() {
                   />
                   <button type="button" className={miniBtn} onClick={applyRepoLocator} disabled={loading}>Use locator</button>
                 </div>
-                {repos.length > 0 ? (
+                {hasLoadedRepos ? (
                   <div className="mt-3 grid gap-2 md:grid-cols-2">
                     {filteredRepos.slice(0, 8).map((r) => (
                       <button
@@ -1182,7 +1233,7 @@ export default function BlogEditApp() {
                   </div>
                 ) : (
                   <div className="mt-3 rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
-                    Load writable repos to browse targets, or paste an owner/repo locator above.
+                    Load writable repos to browse targets, or keep using the repository locator above.
                   </div>
                 )}
                 {filteredRepos.length > 8 ? (

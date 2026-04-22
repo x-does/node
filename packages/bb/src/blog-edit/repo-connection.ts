@@ -46,19 +46,35 @@ export function describePublishTarget(settings: RepoConnectionSettings & { slug:
 }
 
 export function describeRepoWorkspace(
-  settings: RepoConnectionSettings & { hasToken: boolean; hasLoadedRepos: boolean },
+  settings: RepoConnectionSettings & {
+    hasToken: boolean;
+    hasLoadedRepos: boolean;
+    hasWritableRepos: boolean;
+    selectedRepoIsListed: boolean;
+  },
 ) {
-  let nextStep = 'Switch workspaces below, or keep publishing from this repo.';
+  let nextStep = 'Refresh posts when you want to sync this workspace, or choose another repo below.';
   if (!settings.hasToken) {
-    nextStep = 'Connect GitHub to browse writable repos, or paste a repository locator.';
+    nextStep = 'Connect GitHub to browse writable repos, or keep using the repository locator.';
   } else if (!settings.hasLoadedRepos) {
-    nextStep = 'Load writable repos to browse workspace cards, or paste a repository locator.';
+    nextStep = 'Load writable repos to confirm this workspace, or keep using the repository locator.';
+  } else if (!settings.hasWritableRepos) {
+    nextStep = 'Refresh posts to verify this target, or reload writable repos after updating GitHub access.';
+  } else if (!settings.selectedRepoIsListed) {
+    nextStep = 'Refresh posts to verify this target, or switch back to a listed writable repo below.';
   }
 
   return {
     ownerRepo: `${settings.owner}/${settings.repo}`,
-    detailLine: `${settings.branch} branch • ${settings.baseDir} • ${settings.sqlitePath}`,
+    selectionLabel: settings.selectedRepoIsListed ? 'Selected workspace' : 'Manual target',
+    selectionDetail: settings.selectedRepoIsListed
+      ? 'Chosen from your writable repo list.'
+      : settings.hasLoadedRepos && !settings.hasWritableRepos
+        ? 'Using the repository locator because no writable repo cards were returned.'
+        : 'Typed in with the repository locator instead of a repo card.',
+    publishDetail: `${settings.branch} branch • ${settings.baseDir} • ${settings.sqlitePath}`,
     nextStep,
+    settingsHint: 'Advanced settings stay focused on branch and path overrides.',
   };
 }
 
@@ -66,6 +82,7 @@ export function describeRepoWorkflowState(args: {
   ownerRepo: string;
   hasToken: boolean;
   hasLoadedRepos: boolean;
+  hasWritableRepos: boolean;
   selectedRepoIsListed: boolean;
 }) {
   if (!args.hasToken) {
@@ -87,6 +104,17 @@ export function describeRepoWorkflowState(args: {
       detail: 'You can keep using the manual locator, but loading repos makes it easier to switch workspaces and open posts without touching advanced settings.',
       primaryAction: 'loadRepos' as const,
       primaryActionLabel: 'Load writable repos',
+    };
+  }
+
+  if (!args.hasWritableRepos) {
+    return {
+      tone: 'info' as const,
+      badge: 'No writable repos',
+      headline: `GitHub is connected, but no writable repositories were returned. ${args.ownerRepo} remains selected via the manual locator.`,
+      detail: 'Refresh posts to verify this workspace, or reload repos after updating GitHub access.',
+      primaryAction: 'refreshPosts' as const,
+      primaryActionLabel: 'Refresh posts',
     };
   }
 
