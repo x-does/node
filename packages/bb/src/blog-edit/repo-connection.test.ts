@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   parseRepositoryInput,
   describePublishTarget,
+  describeRepoWorkspace,
   getSettingsForSelectedRepo,
 } from './repo-connection';
 
@@ -89,5 +90,54 @@ test('describePublishTarget falls back to a draft slug when slug is empty', () =
       slug: '',
     }).postPath,
     'blogs/draft-post/blog.md',
+  );
+});
+
+test('describeRepoWorkspace summarizes the selected workspace when repos are loaded', () => {
+  assert.deepEqual(
+    describeRepoWorkspace({
+      owner: 'x-does',
+      repo: 'blog',
+      branch: 'main',
+      baseDir: 'content/posts',
+      sqlitePath: 'data/blog.sqlite',
+      hasToken: true,
+      hasLoadedRepos: true,
+    }),
+    {
+      ownerRepo: 'x-does/blog',
+      detailLine: 'Branch main • Base dir content/posts • SQLite data/blog.sqlite',
+      nextStep: 'Pick a repository from the list or keep this one to continue editing.',
+    },
+  );
+});
+
+test('describeRepoWorkspace prompts for a token before repo data is available', () => {
+  assert.deepEqual(
+    describeRepoWorkspace({
+      owner: 'x-does',
+      repo: 'blog',
+      branch: 'main',
+      baseDir: 'content/posts',
+      sqlitePath: 'data/blog.sqlite',
+      hasToken: false,
+      hasLoadedRepos: false,
+    }).nextStep,
+    'Add a GitHub token to load your repositories.',
+  );
+});
+
+test('describeRepoWorkspace prompts to load repositories after auth is ready', () => {
+  assert.deepEqual(
+    describeRepoWorkspace({
+      owner: 'x-does',
+      repo: 'blog',
+      branch: 'main',
+      baseDir: 'content/posts',
+      sqlitePath: 'data/blog.sqlite',
+      hasToken: true,
+      hasLoadedRepos: false,
+    }).nextStep,
+    'Load your repositories to choose where this blog post will be published.',
   );
 });

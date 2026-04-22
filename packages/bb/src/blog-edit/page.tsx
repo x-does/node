@@ -6,7 +6,13 @@ import initSqlJs from 'sql.js';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { isGitHubApiConflictError, isGitHubApiNotFoundError } from './github-api';
 import { describeDeleteAction, describePublishAction, getPostContentPath } from './post-management';
-import { describePublishTarget, getSettingsForSelectedRepo, parseRepositoryInput } from './repo-connection';
+import {
+  type RepoConnectionSettings,
+  describePublishTarget,
+  describeRepoWorkspace,
+  getSettingsForSelectedRepo,
+  parseRepositoryInput,
+} from './repo-connection';
 
 type Repo = {
   id: number;
@@ -52,13 +58,7 @@ type Toast = {
   message: string;
 };
 
-type Settings = {
-  owner: string;
-  repo: string;
-  branch: string;
-  baseDir: string;
-  sqlitePath: string;
-};
+type Settings = RepoConnectionSettings;
 
 const LS_TOKEN = 'blogedit:github-token';
 const LS_SETTINGS = 'blogedit:settings';
@@ -995,6 +995,11 @@ export default function BlogEditApp() {
     ...settings,
     slug: activeSlug || toSlug(title) || 'draft-post',
   });
+  const repoWorkspace = describeRepoWorkspace({
+    ...settings,
+    hasToken: Boolean(token),
+    hasLoadedRepos: repos.length > 0,
+  });
   const selectedRepoLabel = `${settings.owner}/${settings.repo}`;
   const selectedRepoCard = repos.find((repo) => repo.full_name === selectedRepoLabel);
   const selectedRepoSummary =
@@ -1039,8 +1044,6 @@ export default function BlogEditApp() {
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="button" onClick={startAuth} className={btn(false)} disabled={loading}>{token ? 'Re-auth GitHub' : 'Connect GitHub'}</button>
-              <button type="button" onClick={startNewDraft} className={btn(false)} disabled={loading}>New draft</button>
-              <button type="button" onClick={() => void loadPostsFromRepo()} className={btn(false)} disabled={loading}>Refresh posts</button>
               <button type="button" onClick={() => setFullscreen((v) => !v)} className={btn(false)} disabled={loading} title="Ctrl+Shift+F">Fullscreen</button>
             </div>
           </div>
@@ -1048,8 +1051,11 @@ export default function BlogEditApp() {
           <div className="mt-4 rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3 text-xs text-[#cdbfe4]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="text-sm font-semibold text-[#efe8ff]">Selected publish target</div>
+                <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Repository workspace</div>
+                <div className="mt-1 text-sm font-semibold text-[#efe8ff]">{repoWorkspace.ownerRepo}</div>
                 <div className="mt-1 text-[#aa9ac5]">{selectedRepoSummary}</div>
+                <div className="mt-2 text-[#cdbfe4]">{repoWorkspace.detailLine}</div>
+                <div className="mt-1 text-[#8f80aa]">Next step: {repoWorkspace.nextStep}</div>
               </div>
               <div className="flex flex-wrap gap-2">
                 <button type="button" onClick={loadRepos} className={btn(false)} disabled={!token || loading}>Load writable repos</button>
@@ -1058,10 +1064,6 @@ export default function BlogEditApp() {
               </div>
             </div>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <div className="text-[#9c8db7]">Repo</div>
-                <div className="font-medium text-[#efe8ff]">{publishTarget.ownerRepo}</div>
-              </div>
               <div>
                 <div className="text-[#9c8db7]">Branch</div>
                 <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
@@ -1079,10 +1081,7 @@ export default function BlogEditApp() {
                 <div className="font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
               </div>
             </div>
-          </div>
-
-          <div className="mt-4 rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-[#7f6b9d]/15 pt-4">
               <div>
                 <div className="text-sm font-semibold text-[#efe8ff]">Choose a writable repository</div>
                 <div className="text-xs text-[#aa9ac5]">Pick a repo card to connect and load posts immediately, or paste a locator for a repo that is not listed.</div>
@@ -1104,21 +1103,6 @@ export default function BlogEditApp() {
               value={repoLocator}
               onChange={(e) => setRepoLocator(e.target.value)}
             />
-            <div className="mt-3 rounded-xl border border-[#7f6b9d]/20 bg-[#120e1b]/80 p-3 text-xs text-[#cdbfe4]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Current repo connection</div>
-                  <div className="mt-1 text-sm font-semibold text-[#efe8ff]">{selectedRepoLabel}</div>
-                  <div className="mt-1 text-[#aa9ac5]">
-                    Branch <strong className="text-[#efe8ff]">{settings.branch}</strong> · base dir <strong className="text-[#efe8ff]">{settings.baseDir}</strong> · sqlite <strong className="text-[#efe8ff]">{settings.sqlitePath}</strong>
-                  </div>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" className={miniBtn} onClick={() => setTab('posts')}>Browse posts</button>
-                  <button type="button" className={miniBtn} onClick={() => setTab('editor')}>Back to editor</button>
-                </div>
-              </div>
-            </div>
             {repos.length > 0 ? (
               <div className="mt-3 grid gap-2 md:grid-cols-2">
                 {filteredRepos.slice(0, 12).map((r) => (
@@ -1181,6 +1165,10 @@ export default function BlogEditApp() {
 
         {tab === 'editor' && (
           <div className="mt-6 grid gap-3">
+            <div className="flex flex-wrap gap-2 text-sm">
+              <button type="button" onClick={startNewDraft} className={btn(false)} disabled={loading}>New draft</button>
+              <button type="button" onClick={() => setTab('posts')} className={btn(false)} disabled={loading}>Browse loaded posts</button>
+            </div>
             <input className={input} placeholder="Title" value={title} onChange={(e) => setTitle(e.target.value)} />
             {activeSlug ? <div className="text-xs uppercase tracking-[0.16em] text-[#8ea6e8]">Editing existing post: {activeSlug}</div> : null}
             <input className={input} placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -1298,26 +1286,8 @@ export default function BlogEditApp() {
             <label className={label}>Blogs base directory<input className={input} value={settings.baseDir} onChange={(e) => setSettings((s) => ({ ...s, baseDir: e.target.value.trim() }))} /></label>
             <label className={label}>SQLite path<input className={input} value={settings.sqlitePath} onChange={(e) => setSettings((s) => ({ ...s, sqlitePath: e.target.value.trim() }))} /></label>
             <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3 text-xs text-[#cdbfe4]">
-              <div className="font-semibold text-[#efe8ff]">Advanced target details</div>
-              <div className="mt-1 text-[#aa9ac5]">Use this panel for branch/base-dir/sqlite overrides. The main selected-repo workflow lives above.</div>
-              <div className="mt-2 grid gap-2 md:grid-cols-2">
-                <div>
-                  <div className="text-[#9c8db7]">Repo</div>
-                  <div>{publishTarget.ownerRepo}</div>
-                </div>
-                <div>
-                  <div className="text-[#9c8db7]">Branch</div>
-                  <div>{publishTarget.branchLabel}</div>
-                </div>
-                <div>
-                  <div className="text-[#9c8db7]">SQLite index</div>
-                  <div>{publishTarget.sqliteLabel}</div>
-                </div>
-                <div>
-                  <div className="text-[#9c8db7]">Next post file</div>
-                  <div>{publishTarget.postPath}</div>
-                </div>
-              </div>
+              <div className="font-semibold text-[#efe8ff]">Advanced target settings</div>
+              <div className="mt-1 text-[#aa9ac5]">Use this area only for branch, base directory, or sqlite overrides. Repository selection and repo loading stay in the workspace card above.</div>
             </div>
           </div>
         )}

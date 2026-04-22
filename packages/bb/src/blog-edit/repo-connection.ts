@@ -45,3 +45,20 @@ export function describePublishTarget(settings: RepoConnectionSettings & { slug:
   };
 }
 
+export function describeRepoWorkspace(
+  settings: RepoConnectionSettings & { hasToken: boolean; hasLoadedRepos: boolean },
+) {
+  let nextStep = 'Pick a repository from the list or keep this one to continue editing.';
+  if (!settings.hasToken) {
+    nextStep = 'Add a GitHub token to load your repositories.';
+  } else if (!settings.hasLoadedRepos) {
+    nextStep = 'Load your repositories to choose where this blog post will be published.';
+  }
+
+  return {
+    ownerRepo: `${settings.owner}/${settings.repo}`,
+    detailLine: `Branch ${settings.branch} • Base dir ${settings.baseDir} • SQLite ${settings.sqlitePath}`,
+    nextStep,
+  };
+}
+
