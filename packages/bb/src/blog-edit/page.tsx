@@ -5,6 +5,7 @@ import { marked } from 'marked';
 import initSqlJs from 'sql.js';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { isGitHubApiConflictError, isGitHubApiNotFoundError } from './github-api';
+import { describeDeleteAction, getPostContentPath } from './post-management';
 import { describePublishTarget, getSettingsForSelectedRepo, parseRepositoryInput } from './repo-connection';
 
 type Repo = {
@@ -42,6 +43,13 @@ type BlogDocument = {
 
 type Tab = 'editor' | 'posts' | 'settings';
 type ViewMode = 'split' | 'edit' | 'preview';
+type ToastTone = 'success' | 'error' | 'info';
+
+type Toast = {
+  id: number;
+  tone: ToastTone;
+  message: string;
+};
 
 type Settings = {
   owner: string;
@@ -147,7 +155,7 @@ async function getTextFile(token: string, ownerRepo: string, path: string, branc
 async function getFileSha(token: string, ownerRepo: string, path: string, branch: string) {
   const data = await gh<{ sha?: string }>(
     token,
-    `${getApiBase(ownerRepo)}/contents/${encodeURIComponent(path)}?ref=${encodeURIComponent(branch)}`,
+    `${getApiBase(ownerRepo)}/contents/${encodeGitHubContentPath(path)}?ref=${encodeURIComponent(branch)}`,
   );
   return data.sha;
 }
@@ -164,6 +172,13 @@ async function putFile(
   return gh(token, `${getApiBase(ownerRepo)}/contents/${encodeGitHubContentPath(path)}`, {
     method: 'PUT',
     body: JSON.stringify({ message, content: contentBase64, branch, sha }),
+  });
+}
+
+async function deleteFile(token: string, ownerRepo: string, path: string, branch: string, message: string, sha: string) {
+  return gh(token, `${getApiBase(ownerRepo)}/contents/${encodeGitHubContentPath(path)}`, {
+    method: 'DELETE',
+    body: JSON.stringify({ message, branch, sha }),
   });
 }
 
@@ -252,6 +267,39 @@ function buildSqliteWithPost({
   return sqliteOut;
 }
 
+function buildSqliteWithoutPost({
+  SQL,
+  sqliteBytes,
+  slug,
+}: {
+  SQL: Awaited<ReturnType<typeof loadSqlEngine>>;
+  sqliteBytes: Uint8Array | null;
+  slug: string;
+}) {
+  const db = sqliteBytes ? new SQL.Database(sqliteBytes) : new SQL.Database();
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS posts (
+      slug TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      description TEXT DEFAULT '',
+      tags TEXT DEFAULT '',
+      refs TEXT DEFAULT '',
+      links TEXT DEFAULT '',
+      folder TEXT NOT NULL,
+      filename TEXT NOT NULL,
+      createdAt TEXT NOT NULL,
+      updatedAt TEXT NOT NULL
+    );
+  `);
+
+  db.run('DELETE FROM posts WHERE slug = ?', [slug]);
+
+  const sqliteOut = db.export();
+  db.close();
+  return sqliteOut;
+}
+
 async function publishSqliteWithRetry(args: PublishSqliteArgs) {
   let sqliteBytes = await getBinaryFile(args.token, args.ownerRepo, args.sqlitePath, args.branch);
   let lastError: unknown;
@@ -271,6 +319,44 @@ async function publishSqliteWithRetry(args: PublishSqliteArgs) {
         sqliteSha,
       );
       return { bootstrap: !sqliteBytes };
+    } catch (error) {
+      lastError = error;
+      if (!isGitHubApiConflictError(error) || attempt === 2) {
+        throw error;
+      }
+      sqliteBytes = await getBinaryFile(args.token, args.ownerRepo, args.sqlitePath, args.branch);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Failed to update sqlite index.');
+}
+
+async function deletePostFromSqliteWithRetry(args: {
+  SQL: Awaited<ReturnType<typeof loadSqlEngine>>;
+  token: string;
+  ownerRepo: string;
+  branch: string;
+  sqlitePath: string;
+  slug: string;
+}) {
+  let sqliteBytes = await getBinaryFile(args.token, args.ownerRepo, args.sqlitePath, args.branch);
+  let lastError: unknown;
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const sqliteSha = await getFileSha(args.token, args.ownerRepo, args.sqlitePath, args.branch).catch(() => undefined);
+    const sqliteOut = buildSqliteWithoutPost({ ...args, sqliteBytes });
+
+    try {
+      await putFile(
+        args.token,
+        args.ownerRepo,
+        args.sqlitePath,
+        args.branch,
+        bytesToBase64(sqliteOut),
+        `blog: remove ${args.slug} from sqlite index`,
+        sqliteSha,
+      );
+      return;
     } catch (error) {
       lastError = error;
       if (!isGitHubApiConflictError(error) || attempt === 2) {
@@ -347,9 +433,12 @@ export default function BlogEditApp() {
   const [query, setQuery] = useState('');
   const [repoQuery, setRepoQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState('');
+  const [statusText, setStatusText] = useState('Ready to publish.');
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const nextToastIdRef = useRef(0);
+  const toastTimersRef = useRef<Map<number, number>>(new Map());
   const imagePickerRef = useRef<HTMLInputElement | null>(null);
 
   const deferredMarkdown = useDeferredValue(markdown);
@@ -407,13 +496,49 @@ export default function BlogEditApp() {
   }, [requestedSlug, posts]);
 
   useEffect(() => {
+    return () => {
+      toastTimersRef.current.forEach((timer) => window.clearTimeout(timer));
+      toastTimersRef.current.clear();
+    };
+  }, []);
+
+  function dismissToast(id: number) {
+    const timer = toastTimersRef.current.get(id);
+    if (timer) {
+      window.clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
+    setToasts((current) => current.filter((toast) => toast.id !== id));
+  }
+
+  function pushToast(tone: ToastTone, message: string) {
+    const id = nextToastIdRef.current + 1;
+    nextToastIdRef.current = id;
+    setToasts((current) => [...current, { id, tone, message }]);
+    const timer = window.setTimeout(() => {
+      toastTimersRef.current.delete(id);
+      setToasts((current) => current.filter((toast) => toast.id !== id));
+    }, 4200);
+    toastTimersRef.current.set(id, timer);
+  }
+
+  function updateStatus(message: string) {
+    setStatusText(message);
+  }
+
+  function notify(tone: ToastTone, message: string, status = message) {
+    updateStatus(status);
+    pushToast(tone, message);
+  }
+
+  useEffect(() => {
     function onMessage(ev: MessageEvent) {
       if (ev.origin !== window.location.origin) return;
       if (ev.data?.type === 'BLOG_EDIT_AUTH_SUCCESS' && ev.data.token) {
         setToken(String(ev.data.token));
-        setMsg('✅ Authenticated with GitHub (token saved in browser).');
+        notify('success', 'Authenticated with GitHub. Token saved in this browser.', 'GitHub connected.');
       } else if (ev.data?.type === 'BLOG_EDIT_AUTH_ERROR') {
-        setMsg(`❌ Auth error: ${String(ev.data.error || 'unknown')}`);
+        notify('error', `Auth error: ${String(ev.data.error || 'unknown')}`, 'GitHub auth failed.');
       }
     }
 
@@ -518,7 +643,7 @@ export default function BlogEditApp() {
     const matched = url.match(/(?:v=|youtu\.be\/)([a-zA-Z0-9_-]{6,})/);
     const id = matched?.[1];
     if (!id) {
-      setMsg('Could not detect a YouTube video ID in the URL.');
+      notify('error', 'Could not detect a YouTube video ID in the URL.', 'Unable to insert YouTube embed.');
       return;
     }
     insertAtCursor(`\n<iframe width="560" height="315" src="https://www.youtube.com/embed/${id}" title="YouTube video" frameborder="0" allowfullscreen></iframe>\n`);
@@ -535,6 +660,7 @@ export default function BlogEditApp() {
   async function loadRepos() {
     if (!token) return;
     setLoading(true);
+    updateStatus('Loading writable repos...');
     try {
       const me = await gh<{ login: string }>(token, 'https://api.github.com/user');
       setAuthedUser(me.login);
@@ -544,9 +670,9 @@ export default function BlogEditApp() {
       );
       const writable = list.filter((r) => r.permissions?.push || r.permissions?.admin || r.permissions?.maintain);
       setRepos(writable);
-      setMsg(`Loaded ${writable.length} writable repos.`);
+      notify('success', `Loaded ${writable.length} writable repos.`, `Showing ${writable.length} writable repos.`);
     } catch (e) {
-      setMsg(`❌ ${e instanceof Error ? e.message : 'failed to load repos'}`);
+      notify('error', e instanceof Error ? e.message : 'failed to load repos', 'Failed to load writable repos.');
     } finally {
       setLoading(false);
     }
@@ -554,7 +680,7 @@ export default function BlogEditApp() {
 
   async function loadPostsFromRepo(target = settings) {
     setLoading(true);
-    setMsg('');
+    updateStatus(`Loading posts from ${target.owner}/${target.repo}...`);
 
     try {
       const ownerRepo = `${target.owner}/${target.repo}`;
@@ -582,7 +708,7 @@ export default function BlogEditApp() {
             }))
           : [];
         setPosts(items);
-        setMsg(`Loaded ${items.length} posts from the public blog index.`);
+        updateStatus(`Loaded ${items.length} posts from the public blog index.`);
 
         if (requestedSlug) {
           const requestedPost = items.find((item) => item.slug === requestedSlug);
@@ -596,7 +722,7 @@ export default function BlogEditApp() {
 
       if (!sqliteBytes) {
         setPosts([]);
-        setMsg('No sqlite found yet in target repo.');
+        notify('info', 'No sqlite index found yet in the selected repo.', 'No sqlite index found yet in the selected repo.');
         return;
       }
 
@@ -610,7 +736,7 @@ export default function BlogEditApp() {
       db.close();
 
       setPosts(items);
-      setMsg(`Loaded ${items.length} posts from ${ownerRepo}/${target.sqlitePath}`);
+      updateStatus(`Loaded ${items.length} posts from ${ownerRepo}/${target.sqlitePath}.`);
 
       if (requestedSlug) {
         const requestedPost = items.find((item) => item.slug === requestedSlug);
@@ -620,7 +746,7 @@ export default function BlogEditApp() {
         }
       }
     } catch (e) {
-      setMsg(`❌ ${e instanceof Error ? e.message : 'failed to load posts'}`);
+      notify('error', e instanceof Error ? e.message : 'failed to load posts', 'Failed to load posts.');
     } finally {
       setLoading(false);
     }
@@ -628,10 +754,10 @@ export default function BlogEditApp() {
 
   async function openPostInEditor(post: PostMeta, target = settings) {
     setLoading(true);
-    setMsg(`Opening ${post.slug}...`);
+    updateStatus(`Opening ${post.slug}...`);
     try {
       const ownerRepo = `${target.owner}/${target.repo}`;
-      const postPath = `${post.folder}/${post.filename}`;
+      const postPath = getPostContentPath(post);
       let file: string | null = null;
 
       if (token) {
@@ -644,7 +770,7 @@ export default function BlogEditApp() {
       }
 
       if (!file) {
-        setMsg(`❌ Could not load ${postPath} from ${ownerRepo}.`);
+        notify('error', `Could not load ${postPath} from ${ownerRepo}.`, 'Could not load the selected post.');
         return;
       }
 
@@ -657,9 +783,9 @@ export default function BlogEditApp() {
       setMarkdown(parsed.markdown);
       setActiveSlug(post.slug);
       setTab('editor');
-      setMsg(`Loaded ${post.slug} into the editor.`);
+      notify('success', `Loaded ${post.slug} into the editor.`, `Editing ${post.slug}.`);
     } catch (e) {
-      setMsg(`❌ ${e instanceof Error ? e.message : 'failed to open post'}`);
+      notify('error', e instanceof Error ? e.message : 'failed to open post', 'Failed to open post.');
     } finally {
       setLoading(false);
     }
@@ -671,7 +797,11 @@ export default function BlogEditApp() {
     const nextSettings = getSettingsForSelectedRepo(settings, full, selected);
     setSettings(nextSettings);
     setTab('editor');
-    setMsg(`Connected editor to ${full}${selected?.default_branch ? ` on ${selected.default_branch}` : ''}.`);
+    notify(
+      'success',
+      `Selected ${full}${selected?.default_branch ? ` on ${selected.default_branch}` : ''}.`,
+      `Selected repo: ${full}${selected?.default_branch ? ` @ ${selected.default_branch}` : ''}.`,
+    );
     if (shouldLoadPosts) {
       void loadPostsFromRepo(nextSettings);
     }
@@ -680,14 +810,14 @@ export default function BlogEditApp() {
   function applyRepoLocator() {
     const parsed = parseRepositoryInput(repoLocator);
     if (!parsed) {
-      setMsg('Enter owner/repo or a full GitHub repo URL.');
+      notify('error', 'Enter owner/repo or a full GitHub repo URL.', 'Repository locator is invalid.');
       setTab('settings');
       return;
     }
 
     setSettings((s) => ({ ...s, owner: parsed.owner, repo: parsed.repo }));
     setTab('editor');
-    setMsg(`Connected editor to ${parsed.owner}/${parsed.repo}.`);
+    notify('success', `Selected ${parsed.owner}/${parsed.repo}.`, `Selected repo: ${parsed.owner}/${parsed.repo}.`);
   }
 
   function startNewDraft() {
@@ -699,21 +829,30 @@ export default function BlogEditApp() {
     setLinks('');
     setMarkdown('# New post\n\nStart writing...');
     setTab('editor');
-    setMsg('Started a new draft.');
+    updateStatus('Started a new draft.');
   }
 
   async function publish() {
-    if (!token) return setMsg('Please auth with GitHub first.');
-    if (!title.trim() || !markdown.trim()) return setMsg('Title and markdown are required.');
+    if (!token) {
+      notify('error', 'Please auth with GitHub first.', 'GitHub auth is required before publishing.');
+      return;
+    }
+    if (!title.trim() || !markdown.trim()) {
+      notify('error', 'Title and markdown are required.', 'Title and markdown are required.');
+      return;
+    }
 
     setLoading(true);
-    setMsg('Publishing...');
+    updateStatus('Publishing...');
 
     try {
       const ownerRepo = `${settings.owner}/${settings.repo}`;
       const nextSlug = toSlug(title);
       const slug = activeSlug || nextSlug;
-      if (!slug) return setMsg('A valid slug could not be generated from the title.');
+      if (!slug) {
+        notify('error', 'A valid slug could not be generated from the title.', 'Slug generation failed.');
+        return;
+      }
       const postPath = `${settings.baseDir}/${slug}/blog.md`;
       const now = new Date().toISOString();
 
@@ -754,12 +893,64 @@ export default function BlogEditApp() {
         baseDir: settings.baseDir,
       });
 
-      setMsg(
-        `✅ Published ${slug} to ${ownerRepo}${isBootstrapPublish ? ' (created a new sqlite index automatically)' : ''}`,
+      notify(
+        'success',
+        `Published ${slug} to ${ownerRepo}${isBootstrapPublish ? ' and created a new sqlite index automatically' : ''}.`,
+        `Published ${slug} to ${ownerRepo}.`,
       );
       await loadPostsFromRepo();
     } catch (e) {
-      setMsg(`❌ ${e instanceof Error ? e.message : 'publish failed'}`);
+      notify('error', e instanceof Error ? e.message : 'publish failed', 'Publish failed.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deletePost(post: PostMeta) {
+    if (!token) {
+      notify('error', 'GitHub auth is required before deleting a post.', 'GitHub auth is required before deleting.');
+      return;
+    }
+
+    const ownerRepo = `${settings.owner}/${settings.repo}`;
+    const deleteCopy = describeDeleteAction(post, ownerRepo, settings.branch);
+    const confirmed = window.confirm(deleteCopy.confirmMessage);
+    if (!confirmed) return;
+
+    setLoading(true);
+    updateStatus(`Deleting ${post.slug}...`);
+
+    try {
+      const postSha = await getFileSha(token, ownerRepo, deleteCopy.postPath, settings.branch);
+      if (!postSha) {
+        throw new Error(`Could not find the latest file SHA for ${deleteCopy.postPath}.`);
+      }
+      await deleteFile(
+        token,
+        ownerRepo,
+        deleteCopy.postPath,
+        settings.branch,
+        `blog: delete ${post.slug}`,
+        postSha,
+      );
+
+      const SQL = await loadSqlEngine();
+      await deletePostFromSqliteWithRetry({
+        SQL,
+        token,
+        ownerRepo,
+        branch: settings.branch,
+        sqlitePath: settings.sqlitePath,
+        slug: post.slug,
+      });
+
+      setPosts((current) => current.filter((item) => item.slug !== post.slug));
+      if (activeSlug === post.slug) {
+        setActiveSlug('');
+      }
+      notify('success', deleteCopy.successMessage, `Deleted ${post.slug}.`);
+    } catch (e) {
+      notify('error', e instanceof Error ? e.message : 'delete failed', 'Delete failed.');
     } finally {
       setLoading(false);
     }
@@ -807,65 +998,108 @@ export default function BlogEditApp() {
         </div>
 
         <div className="mt-6 rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/55 p-4 text-sm text-[#c7bbdc]">
-          <div className="flex flex-wrap items-center gap-2">
-            <div>GitHub: <strong>{token ? `connected${authedUser ? ` as ${authedUser}` : ''}` : 'not connected'}</strong></div>
-            <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-xs text-[#b9accf]">
-              {repos.length > 0 ? `${filteredRepos.length}/${repos.length} writable repos visible` : 'load repos to browse targets'}
-            </span>
-          </div>
-          <div className="mt-1">Target: <strong>{publishTarget.ownerRepo}</strong> @ <strong>{publishTarget.branchLabel}</strong></div>
-          <div className="mt-2 text-xs text-[#aa9ac5]">
-            Connect flow: GitHub auth → choose or paste a repo → verify the target preview → publish.
-          </div>
-          <div className="mt-3 grid gap-2 rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3 text-xs text-[#cdbfe4] md:grid-cols-2">
-            <div>
-              <div className="text-[#9c8db7]">Repo</div>
-              <div className="font-medium text-[#efe8ff]">{publishTarget.ownerRepo}</div>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <div>GitHub: <strong>{token ? `connected${authedUser ? ` as ${authedUser}` : ''}` : 'not connected'}</strong></div>
+                <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-xs text-[#b9accf]">
+                  {repos.length > 0 ? `${filteredRepos.length}/${repos.length} writable repos visible` : 'load repos to browse targets'}
+                </span>
+              </div>
+              <div className="text-xs text-[#aa9ac5]">{statusText}</div>
+              <div className="text-xs text-[#aa9ac5]">
+                Connect flow: GitHub auth → choose or paste a repo → verify the target preview → publish.
+              </div>
             </div>
-            <div>
-              <div className="text-[#9c8db7]">Branch</div>
-              <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={startAuth} className={btn(false)} disabled={loading}>{token ? 'Re-auth GitHub' : 'Connect GitHub'}</button>
+              <button type="button" onClick={startNewDraft} className={btn(false)} disabled={loading}>New draft</button>
+              <button type="button" onClick={() => void loadPostsFromRepo()} className={btn(false)} disabled={!token || loading}>Refresh posts</button>
+              <button type="button" onClick={() => setFullscreen((v) => !v)} className={btn(false)} disabled={loading} title="Ctrl+Shift+F">Fullscreen</button>
             </div>
-            <div>
-              <div className="text-[#9c8db7]">SQLite index</div>
-              <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
-            </div>
-            <div>
-              <div className="text-[#9c8db7]">Next post file</div>
-              <div className="font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
-            </div>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={startAuth} className={btn(false)} disabled={loading}>{token ? 'Re-auth with GitHub' : 'Connect GitHub'}</button>
-            <button type="button" onClick={loadRepos} className={btn(false)} disabled={!token || loading}>Load writable repos</button>
-            <button type="button" onClick={() => void loadPostsFromRepo()} className={btn(false)} disabled={!token || loading}>Load posts from selected repo</button>
-            <button type="button" onClick={startNewDraft} className={btn(false)} disabled={loading}>New draft</button>
-            <button type="button" onClick={() => setTab('settings')} className={btn(tab === 'settings')} disabled={loading}>Repo settings</button>
-            <button type="button" onClick={() => setFullscreen((v) => !v)} className={btn(false)} disabled={loading} title="Ctrl+Shift+F">Toggle fullscreen</button>
-            <button type="button" onClick={() => { localStorage.removeItem(LS_TOKEN); setToken(''); setAuthedUser(''); setRepos([]); setRepoQuery(''); setMsg('Logged out locally.'); }} className={btn(false)} disabled={loading}>Clear local token</button>
           </div>
 
-          {repos.length > 0 && (
-            <div className="mt-4 rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-sm font-semibold text-[#efe8ff]">Connect to a repository</div>
-                  <div className="text-xs text-[#aa9ac5]">Pick a writable repo here, or paste one in Settings if it is not listed yet.</div>
-                </div>
-                <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
+          <div className="mt-4 rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3 text-xs text-[#cdbfe4]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-[#efe8ff]">Selected publish target</div>
+                <div className="mt-1 text-[#aa9ac5]">Use a writable repo card below or paste a locator if the repo is missing.</div>
               </div>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={loadRepos} className={btn(false)} disabled={!token || loading}>Load writable repos</button>
+                <button type="button" onClick={() => setTab('settings')} className={btn(tab === 'settings')} disabled={loading}>Advanced settings</button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    localStorage.removeItem(LS_TOKEN);
+                    setToken('');
+                    setAuthedUser('');
+                    setRepos([]);
+                    setRepoQuery('');
+                    updateStatus('Cleared local GitHub token.');
+                    pushToast('info', 'Cleared the saved local GitHub token.');
+                  }}
+                  className={btn(false)}
+                  disabled={loading}
+                >
+                  Clear local token
+                </button>
+              </div>
+            </div>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+              <div>
+                <div className="text-[#9c8db7]">Repo</div>
+                <div className="font-medium text-[#efe8ff]">{publishTarget.ownerRepo}</div>
+              </div>
+              <div>
+                <div className="text-[#9c8db7]">Branch</div>
+                <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
+              </div>
+              <div>
+                <div className="text-[#9c8db7]">SQLite index</div>
+                <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
+              </div>
+              <div>
+                <div className="text-[#9c8db7]">Next post file</div>
+                <div className="font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-semibold text-[#efe8ff]">Choose a writable repository</div>
+                <div className="text-xs text-[#aa9ac5]">Pick a repo card to connect and load posts immediately.</div>
+              </div>
+              <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
+            </div>
+            <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
               <input
-                className={`${input} mt-3`}
+                className={input}
                 placeholder="Search writable repos by owner, repo, or description"
                 value={repoQuery}
                 onChange={(e) => setRepoQuery(e.target.value)}
               />
+              <button type="button" className={btn(false)} onClick={applyRepoLocator} disabled={loading}>Use pasted locator</button>
+            </div>
+            <input
+              className={`${input} mt-3`}
+              placeholder="x-does/blog or https://github.com/x-does/blog"
+              value={repoLocator}
+              onChange={(e) => setRepoLocator(e.target.value)}
+            />
+            {repos.length > 0 ? (
               <div className="mt-3 grid gap-2 md:grid-cols-2">
                 {filteredRepos.slice(0, 12).map((r) => (
                   <button
                     key={r.id}
                     type="button"
-                    className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-3 text-left transition hover:border-[#a58ac8]/55 hover:bg-[#171123]"
+                    className={`rounded-xl border p-3 text-left transition hover:border-[#a58ac8]/55 hover:bg-[#171123] ${
+                      publishTarget.ownerRepo === r.full_name
+                        ? 'border-[#a58ac8]/60 bg-[#171123]'
+                        : 'border-[#7f6b9d]/25 bg-[#110d19]/45'
+                    }`}
                     onClick={() => applySelectedRepo(r.full_name, true)}
                   >
                     <div className="flex flex-wrap items-center gap-2">
@@ -874,22 +1108,42 @@ export default function BlogEditApp() {
                       {r.private ? <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">private</span> : null}
                     </div>
                     {r.description ? <div className="mt-1 text-xs text-[#b9accf]">{r.description}</div> : null}
-                    <div className="mt-2 text-xs text-[#8ea6e8]">Use this repo</div>
+                    <div className="mt-2 text-xs text-[#8ea6e8]">{publishTarget.ownerRepo === r.full_name ? 'Selected target' : 'Connect and load posts'}</div>
                   </button>
                 ))}
                 {filteredRepos.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
-                    No writable repos match that search. You can still type owner/repo/branch manually in Settings.
+                    No writable repos match that search. You can still paste owner/repo above or adjust advanced settings.
                   </div>
                 ) : null}
               </div>
-              {filteredRepos.length > 12 ? (
-                <div className="mt-2 text-xs text-[#9c8db7]">Showing first 12 matches. Narrow search to find the exact repo faster.</div>
-              ) : null}
-            </div>
-          )}
+            ) : (
+              <div className="mt-3 rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
+                Load writable repos to browse targets, or paste an owner/repo locator above.
+              </div>
+            )}
+            {filteredRepos.length > 12 ? (
+              <div className="mt-2 text-xs text-[#9c8db7]">Showing first 12 matches. Narrow search to find the exact repo faster.</div>
+            ) : null}
+          </div>
+        </div>
 
-          {msg ? <div className="mt-3 text-[#d8c9ef]">{msg}</div> : null}
+        <div className="pointer-events-none fixed bottom-4 right-4 z-[60] flex w-full max-w-sm flex-col gap-2">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`pointer-events-auto rounded-xl border px-4 py-3 text-sm shadow-2xl backdrop-blur ${toastClassName(toast.tone)}`}
+              role="status"
+              aria-live="polite"
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex-1">{toast.message}</div>
+                <button type="button" className="text-xs text-white/80 hover:text-white" onClick={() => dismissToast(toast.id)}>
+                  Dismiss
+                </button>
+              </div>
+            </div>
+          ))}
         </div>
 
         {tab === 'editor' && (
@@ -901,23 +1155,28 @@ export default function BlogEditApp() {
             <input className={input} placeholder="Refs/blog slugs (comma separated, or use @slug in content)" value={refs} onChange={(e) => setRefs(e.target.value)} />
             <input className={input} placeholder="Links (comma separated URLs)" value={links} onChange={(e) => setLinks(e.target.value)} />
 
-            <div className="sticky top-3 z-10 flex flex-wrap gap-2 rounded-lg border border-[#7f6b9d]/25 bg-[#0d0a15]/95 p-2 text-xs backdrop-blur">
-              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n# Heading 1\n')}>H1</button>
-              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n## Heading 2\n')}>H2</button>
-              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n### Heading 3\n')}>H3</button>
-              <button type="button" className={miniBtn} onClick={() => wrapSelection('**', '**')}>Bold</button>
-              <button type="button" className={miniBtn} onClick={() => wrapSelection('_', '_')}>Italic</button>
-              <button type="button" className={miniBtn} onClick={() => wrapSelection('`', '`')}>Inline code</button>
-              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n```ts\nconsole.log("code block")\n```\n')}>Code block</button>
-              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n> Quote\n')}>Quote</button>
-              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n- List item\n- List item\n')}>UL</button>
-              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n1. First\n2. Second\n')}>OL</button>
-              <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n- [ ] Task\n- [x] Done\n')}>Task list</button>
-              <button type="button" className={miniBtn} onClick={onInsertLink}>Link</button>
-              <button type="button" className={miniBtn} onClick={onInsertImageUrl}>Image URL</button>
-              <button type="button" className={miniBtn} onClick={() => imagePickerRef.current?.click()}>Image file</button>
-              <button type="button" className={miniBtn} onClick={onInsertYouTube}>YouTube</button>
-              <button type="button" className={miniBtn} onClick={onInsertRef}>@ref</button>
+            <div className="sticky top-3 z-10 rounded-lg border border-[#7f6b9d]/25 bg-[#0d0a15]/95 p-3 text-xs backdrop-blur">
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n# Heading 1\n')}>H1</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n## Heading 2\n')}>H2</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n### Heading 3\n')}>H3</button>
+                <button type="button" className={miniBtn} onClick={() => wrapSelection('**', '**')}>Bold</button>
+                <button type="button" className={miniBtn} onClick={() => wrapSelection('_', '_')}>Italic</button>
+                <button type="button" className={miniBtn} onClick={() => wrapSelection('`', '`')}>Code</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n> Quote\n')}>Quote</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n- List item\n- List item\n')}>List</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n- [ ] Task\n- [x] Done\n')}>Tasks</button>
+                <button type="button" className={miniBtn} onClick={() => imagePickerRef.current?.click()}>Image</button>
+                <button type="button" className={miniBtn} onClick={onInsertLink}>Link</button>
+                <button type="button" className={miniBtn} onClick={onInsertYouTube}>YouTube</button>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#aa9ac5]">
+                <span>More inserts:</span>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n```ts\nconsole.log("code block")\n```\n')}>Code block</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n1. First\n2. Second\n')}>Numbered list</button>
+                <button type="button" className={miniBtn} onClick={onInsertImageUrl}>Image URL</button>
+                <button type="button" className={miniBtn} onClick={onInsertRef}>@ref</button>
+              </div>
               <input ref={imagePickerRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickImage(f); e.currentTarget.value = ''; }} />
             </div>
 
@@ -956,6 +1215,7 @@ export default function BlogEditApp() {
                     </div>
                     <div className="flex flex-wrap gap-2 text-sm">
                       <button type="button" className={btn(false)} onClick={() => void openPostInEditor(p)} disabled={loading}>Open in editor</button>
+                      <button type="button" className={btn(false)} onClick={() => void deletePost(p)} disabled={!token || loading}>Delete post</button>
                       <Link href={`/blog/${encodeURIComponent(p.slug)}`} className="rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/35 px-3 py-2 text-[#cdbfe4] hover:text-white">
                         Read post
                       </Link>
@@ -997,7 +1257,8 @@ export default function BlogEditApp() {
             <label className={label}>Blogs base directory<input className={input} value={settings.baseDir} onChange={(e) => setSettings((s) => ({ ...s, baseDir: e.target.value.trim() }))} /></label>
             <label className={label}>SQLite path<input className={input} value={settings.sqlitePath} onChange={(e) => setSettings((s) => ({ ...s, sqlitePath: e.target.value.trim() }))} /></label>
             <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3 text-xs text-[#cdbfe4]">
-              <div className="font-semibold text-[#efe8ff]">Publish target preview</div>
+              <div className="font-semibold text-[#efe8ff]">Advanced target details</div>
+              <div className="mt-1 text-[#aa9ac5]">Use this panel for branch/base-dir/sqlite overrides. The main selected-repo workflow lives above.</div>
               <div className="mt-2 grid gap-2 md:grid-cols-2">
                 <div>
                   <div className="text-[#9c8db7]">Repo</div>
@@ -1016,33 +1277,12 @@ export default function BlogEditApp() {
                   <div>{publishTarget.postPath}</div>
                 </div>
               </div>
-              <div className="mt-2 text-[#aa9ac5]">Flow: auth → choose repo → verify target → publish.</div>
             </div>
-
-            {repos.length > 0 && (
-              <div className="rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/45 p-3">
-                <div className="mb-2 text-sm text-[#bfb2d4]">Quick select writable repo</div>
-                <select
-                  className={input}
-                  onChange={(e) => {
-                    const full = e.target.value;
-                    if (!full) return;
-                    applySelectedRepo(full, false);
-                  }}
-                  defaultValue=""
-                >
-                  <option value="">-- choose --</option>
-                  {filteredRepos.map((r) => (
-                    <option key={r.id} value={r.full_name}>{r.full_name} ({r.default_branch})</option>
-                  ))}
-                </select>
-              </div>
-            )}
           </div>
         )}
       </section>
 
-      <style jsx>{`
+      <style>{`
         .preview :global(h1), .preview :global(h2), .preview :global(h3) {
           color: #f3edff;
           font-weight: 800;
@@ -1087,6 +1327,17 @@ function btn(active: boolean) {
       ? 'border-[#a58ac8]/60 bg-[#241a36] text-white'
       : 'border-[#7f6b9d]/30 bg-[#1a1328] text-[#efe8ff] hover:border-[#a58ac8]/50'
   }`;
+}
+
+function toastClassName(tone: ToastTone) {
+  switch (tone) {
+    case 'success':
+      return 'border-emerald-400/50 bg-emerald-950/90 text-emerald-50';
+    case 'error':
+      return 'border-rose-400/50 bg-rose-950/90 text-rose-50';
+    default:
+      return 'border-sky-400/50 bg-sky-950/90 text-sky-50';
+  }
 }
 
 const miniBtn = 'rounded border border-[#7f6b9d]/35 bg-[#1a1328] px-2 py-1 text-[#e9deff] hover:border-[#a58ac8]/60';
