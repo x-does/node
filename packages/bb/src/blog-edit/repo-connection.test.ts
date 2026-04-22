@@ -107,7 +107,7 @@ test('describeRepoWorkspace summarizes the selected workspace when repos are loa
     {
       ownerRepo: 'x-does/blog',
       detailLine: 'Branch main • Base dir content/posts • SQLite data/blog.sqlite',
-      nextStep: 'Pick a repository from the list or keep this one to continue editing.',
+      nextStep: 'Pick a repository from the list, or paste a repository locator to switch workspaces.',
     },
   );
 });
@@ -123,7 +123,7 @@ test('describeRepoWorkspace prompts for a token before repo data is available', 
       hasToken: false,
       hasLoadedRepos: false,
     }).nextStep,
-    'Add a GitHub token to load your repositories.',
+    'Add a GitHub token to load writable repositories or paste a repository locator.',
   );
 });
 
@@ -138,6 +138,6 @@ test('describeRepoWorkspace prompts to load repositories after auth is ready', (
       hasToken: true,
       hasLoadedRepos: false,
     }).nextStep,
-    'Load your repositories to choose where this blog post will be published.',
+    'Load writable repositories, or paste a repository locator to choose a different workspace.',
   );
 });

@@ -48,11 +48,11 @@ export function describePublishTarget(settings: RepoConnectionSettings & { slug:
 export function describeRepoWorkspace(
   settings: RepoConnectionSettings & { hasToken: boolean; hasLoadedRepos: boolean },
 ) {
-  let nextStep = 'Pick a repository from the list or keep this one to continue editing.';
+  let nextStep = 'Pick a repository from the list, or paste a repository locator to switch workspaces.';
   if (!settings.hasToken) {
-    nextStep = 'Add a GitHub token to load your repositories.';
+    nextStep = 'Add a GitHub token to load writable repositories or paste a repository locator.';
   } else if (!settings.hasLoadedRepos) {
-    nextStep = 'Load your repositories to choose where this blog post will be published.';
+    nextStep = 'Load writable repositories, or paste a repository locator to choose a different workspace.';
   }
 
   return {
