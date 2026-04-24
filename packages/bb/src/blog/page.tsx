@@ -22,21 +22,12 @@ export async function BlogPage({ searchParams }: { searchParams: SearchParams })
 
   return (
     <section className="py-10">
-      <div className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="font-display text-5xl font-bold text-[#f3edff]">Blog</h1>
-          <p className="mt-3 text-[#b9accf]">Latest posts from the standalone blog repository sqlite index.</p>
-          <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[#8ea6e8]">BB migration proof marker · live route now served through packaged bb integration</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-sm">
-          <Link href="/blog-edit" className="rounded-lg border border-[#7f6b9d]/30 bg-[#1a1328] px-3 py-2 text-[#efe8ff] hover:border-[#a58ac8]/50">
-            Open editor
-          </Link>
-          <Link href="/" className="rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/35 px-3 py-2 text-[#cdbfe4] hover:text-white">
-            Back to main
-          </Link>
-        </div>
+      <div>
+        <h1 className="font-display text-5xl font-bold text-[#f3edff]">Blog</h1>
+        <p className="mt-3 text-[#b9accf]">Latest posts from the standalone blog repository sqlite index.</p>
+        <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[#8ea6e8]">BB migration proof marker · live route now served through packaged bb integration</p>
       </div>
+      <div className="mt-6" />
 
       <form method="GET" className="mt-6 flex max-w-2xl gap-2" role="search" aria-label="Search indexed blog posts">
         <input
