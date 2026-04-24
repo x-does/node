@@ -24,12 +24,9 @@ export async function BlogPage({ searchParams }: { searchParams: SearchParams })
     <section className="py-10">
       <div>
         <h1 className="font-display text-5xl font-bold text-[#f3edff]">Blog</h1>
-        <p className="mt-3 text-[#b9accf]">Latest posts from the standalone blog repository sqlite index.</p>
-        <p className="mt-2 text-xs uppercase tracking-[0.18em] text-[#8ea6e8]">BB migration proof marker · live route now served through packaged bb integration</p>
       </div>
-      <div className="mt-6" />
 
-      <form method="GET" className="mt-6 flex max-w-2xl gap-2" role="search" aria-label="Search indexed blog posts">
+      <form method="GET" className="mt-6 flex w-full gap-2" role="search" aria-label="Search indexed blog posts">
         <input
           name="q"
           defaultValue={q}
