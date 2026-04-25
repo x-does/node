@@ -23,7 +23,7 @@ export async function BlogPage({ searchParams }: { searchParams: SearchParams })
   return (
     <section className="py-10">
       <div>
-        <h1 className="font-display text-5xl font-bold text-[#f3edff]">Blog</h1>
+        <h1 className="font-display text-5xl font-bold text-[#f3edff]">X-Does Pages</h1>
       </div>
 
       <form method="GET" className="mt-6 flex w-full gap-2" role="search" aria-label="Search indexed blog posts">
