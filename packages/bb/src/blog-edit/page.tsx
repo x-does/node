@@ -424,7 +424,7 @@ function cycleViewMode(current: ViewMode): ViewMode {
 
 export default function BlogEditApp() {
   const [requestedSlug, setRequestedSlug] = useState('');
-  const [tab, setTab] = useState<Tab>('editor');
+  const [tab, setTab] = useState<Tab>('posts');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [fullscreen, setFullscreen] = useState(false);
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
