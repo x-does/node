@@ -1105,9 +1105,9 @@ export default function BlogEditApp() {
         </div>
 
         <div className="mt-6 rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/55 p-4 text-sm text-[#c7bbdc]">
-          <div className="grid gap-3 xl:grid-cols-2">
+          <div className="grid gap-3">
             {workspaceAccordionCards.map((card) => (
-              <div key={card.key} className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
+              <div key={card.key} className="w-full text-xs text-[#cdbfe4]">
                 <button
                   type="button"
                   className="flex w-full items-start justify-between gap-3 rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/80 px-3 py-3 text-left"
