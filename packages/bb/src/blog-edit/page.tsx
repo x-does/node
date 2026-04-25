@@ -51,13 +51,6 @@ type BlogDocument = {
 type Tab = 'editor' | 'posts';
 type ViewMode = 'split' | 'edit' | 'preview';
 
-type WorkspaceIconCard = {
-  icon: string;
-  label: string;
-  value: string;
-  tone?: 'default' | 'success';
-};
-
 type WorkspaceAccordionCard = {
   key: 'publish-target' | 'workspace-settings';
   eyebrow: string;
@@ -1079,47 +1072,11 @@ export default function BlogEditApp() {
     hasWritableRepos,
     selectedRepoIsListed,
   });
-  const selectedRepoSummary =
-    selectedRepoCard?.description?.trim() ||
-    'Posts publish into the selected repo using the current branch, base directory, and sqlite path.';
-  const repoWorkflow = describeRepoWorkflowState({
-    ownerRepo: selectedRepoLabel,
-    hasToken: Boolean(token),
-    hasLoadedRepos,
-    hasWritableRepos,
-    selectedRepoIsListed,
-  });
   const selectedPostMeta = posts.find((post) => post.slug === activeSlug);
   const workspaceSwitcherTitle = hasLoadedRepos ? 'Switch workspace' : 'Choose workspace';
   const workspaceSwitcherDescription = hasLoadedRepos
     ? 'Pick a writable repo card, or use the locator when the repo is not listed.'
     : 'Use the primary action to load writable repos, or paste a repository locator to keep moving.';
-  const workspacePrimaryAction =
-    repoWorkflow.primaryAction === 'connect'
-      ? startAuth
-      : repoWorkflow.primaryAction === 'loadRepos'
-        ? loadRepos
-        : () => void loadPostsFromRepo();
-  const workspaceIconCards: WorkspaceIconCard[] = [
-    {
-      icon: token ? '●' : '○',
-      label: 'GitHub',
-      value: token ? authedUser || 'Connected' : 'Not connected',
-      tone: token ? 'success' : 'default',
-    },
-    {
-      icon: '⌂',
-      label: 'Repo',
-      value: repoWorkspace.ownerRepo,
-      tone: selectedRepoIsListed ? 'success' : 'default',
-    },
-    {
-      icon: '✎',
-      label: 'Post',
-      value: activeSlug ? selectedPostMeta?.title || activeSlug : 'New draft',
-      tone: activeSlug ? 'success' : 'default',
-    },
-  ];
   const hasSavedAuth = Boolean(token);
   const workspaceAccordionCards: WorkspaceAccordionCard[] = [
     {
@@ -1157,49 +1114,7 @@ export default function BlogEditApp() {
         </div>
 
         <div className="mt-6 rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/55 p-4 text-sm text-[#c7bbdc]">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className={`rounded-full border px-2 py-0.5 text-xs ${workflowBadgeClassName(repoWorkflow.tone)}`}>
-                  {repoWorkflow.badge}
-                </span>
-                {workspaceIconCards.map((card) => (
-                  <span
-                    key={card.label}
-                    className={`inline-flex items-center gap-2 rounded-full border px-2 py-0.5 text-xs ${
-                      card.tone === 'success'
-                        ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-50'
-                        : 'border-[#7f6b9d]/30 text-[#b9accf]'
-                    }`}
-                  >
-                    <span aria-hidden="true">{card.icon}</span>
-                    <span className="text-[#8f80aa]">{card.label}</span>
-                    <span className="text-[#efe8ff]">{card.value}</span>
-                  </span>
-                ))}
-              </div>
-              <div>
-                <div className="text-xs uppercase tracking-[0.18em] text-[#8ea6e8]">Workspace</div>
-                <div className="mt-1 text-lg font-semibold text-[#efe8ff]">{repoWorkspace.ownerRepo}</div>
-                <div className="mt-1 text-[#aa9ac5]">{selectedRepoSummary}</div>
-                <div className="mt-2 text-xs text-[#cdbfe4]">{repoWorkflow.detail}</div>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={workspacePrimaryAction}
-                className={btn(false)}
-                disabled={loading || (repoWorkflow.primaryAction === 'loadRepos' && !token)}
-              >
-                {repoWorkflow.primaryActionLabel}
-              </button>
-              <button type="button" className={miniBtn} onClick={startNewDraft} disabled={loading}>New draft</button>
-              <button type="button" className={miniBtn} onClick={() => setFullscreen((v) => !v)} disabled={loading}>Fullscreen</button>
-            </div>
-          </div>
-
-          <div className="mt-4 grid gap-3 xl:grid-cols-2">
+          <div className="grid gap-3 xl:grid-cols-2">
             {workspaceAccordionCards.map((card) => (
               <div key={card.key} className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
                 <button
@@ -1523,16 +1438,6 @@ function toastClassName(tone: ToastTone) {
   }
 }
 
-function workflowBadgeClassName(tone: ToastTone) {
-  switch (tone) {
-    case 'success':
-      return 'border-emerald-400/35 bg-emerald-500/10 text-emerald-100';
-    case 'error':
-      return 'border-rose-400/35 bg-rose-500/10 text-rose-100';
-    default:
-      return 'border-sky-400/35 bg-sky-500/10 text-sky-100';
-  }
-}
 
 const miniBtn = 'rounded border border-[#7f6b9d]/35 bg-[#1a1328] px-2 py-1 text-[#e9deff] hover:border-[#a58ac8]/60';
 const input = 'w-full rounded-lg border border-[#7f6b9d]/30 bg-[#130f1d] px-3 py-2 text-[#efe8ff] outline-none';
