@@ -48,8 +48,15 @@ type BlogDocument = {
   markdown: string;
 };
 
-type Tab = 'editor' | 'posts' | 'settings';
+type Tab = 'editor' | 'posts';
 type ViewMode = 'split' | 'edit' | 'preview';
+
+type WorkspaceIconCard = {
+  icon: string;
+  label: string;
+  value: string;
+  tone?: 'default' | 'success';
+};
 type ToastTone = 'success' | 'error' | 'info';
 
 type Toast = {
@@ -416,6 +423,8 @@ export default function BlogEditApp() {
   const [tab, setTab] = useState<Tab>('editor');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [fullscreen, setFullscreen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [didAutoLoadWorkspace, setDidAutoLoadWorkspace] = useState(false);
 
   const [token, setToken] = useState('');
   const [authedUser, setAuthedUser] = useState('');
@@ -487,6 +496,15 @@ export default function BlogEditApp() {
   }, []);
 
   useEffect(() => {
+    if (!token || didAutoLoadWorkspace || loading) return;
+    setDidAutoLoadWorkspace(true);
+    void (async () => {
+      await loadRepos();
+      await loadPostsFromRepo();
+    })();
+  }, [token, didAutoLoadWorkspace, loading]);
+
+  useEffect(() => {
     if (!requestedSlug) return;
     const existing = posts.find((post) => post.slug === requestedSlug);
     if (existing) {
@@ -497,11 +515,13 @@ export default function BlogEditApp() {
       return;
     }
 
+    if (loading) return;
+
     void (async () => {
       await loadPostsFromRepo();
       setRequestedSlug('');
     })();
-  }, [requestedSlug, posts]);
+  }, [requestedSlug, posts, loading]);
 
   useEffect(() => {
     return () => {
@@ -1068,178 +1088,214 @@ export default function BlogEditApp() {
       : repoWorkflow.primaryAction === 'loadRepos'
         ? loadRepos
         : () => void loadPostsFromRepo();
+  const workspaceIconCards: WorkspaceIconCard[] = [
+    {
+      icon: token ? '●' : '○',
+      label: 'GitHub',
+      value: token ? authedUser || 'Connected' : 'Not connected',
+      tone: token ? 'success' : 'default',
+    },
+    {
+      icon: '⌂',
+      label: 'Repo',
+      value: repoWorkspace.ownerRepo,
+      tone: selectedRepoIsListed ? 'success' : 'default',
+    },
+    {
+      icon: '✎',
+      label: 'Post',
+      value: activeSlug ? selectedPostMeta?.title || activeSlug : 'New draft',
+      tone: activeSlug ? 'success' : 'default',
+    },
+  ];
+  const hasSavedAuth = Boolean(token);
 
   return (
     <div className={fullscreen ? 'fixed inset-0 z-50 overflow-auto bg-[#07060c] p-6' : ''}>
       <section className="py-8">
-        <h1 className="text-4xl font-black text-[#f3edff] sm:text-5xl">Blog Editor App</h1>
-        <p className="mt-2 text-[#b9accf]">
-          Self-contained authoring flow for /blog-edit.
-          <span className="ml-2 inline-flex gap-2 rounded border border-[#7f6b9d]/30 px-2 py-0.5 text-xs">
-            <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd> fullscreen
-          </span>
-          <span className="ml-2 inline-flex gap-2 rounded border border-[#7f6b9d]/30 px-2 py-0.5 text-xs">
-            <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Enter</kbd> edit/preview
-          </span>
-        </p>
-
-        <div className="mt-5 flex flex-wrap gap-2">
-          <button type="button" onClick={() => setTab('editor')} className={btn(tab === 'editor')} aria-pressed={tab === 'editor'}>Editor</button>
-          <button type="button" onClick={() => setTab('posts')} className={btn(tab === 'posts')} aria-pressed={tab === 'posts'}>Posts</button>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-4xl font-black text-[#f3edff] sm:text-5xl">Blog Editor App</h1>
+            <p className="mt-2 text-sm text-[#b9accf]">Cleaner workspace controls, faster post loading, less clutter.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => setTab('editor')} className={btn(tab === 'editor')} aria-pressed={tab === 'editor'}>Editor</button>
+            <button type="button" onClick={() => setTab('posts')} className={btn(tab === 'posts')} aria-pressed={tab === 'posts'}>Posts</button>
+          </div>
         </div>
 
         <div className="mt-6 rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/55 p-4 text-sm text-[#c7bbdc]">
-          <div className="rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/80 p-4">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className={`rounded-full border px-2 py-0.5 text-xs ${workflowBadgeClassName(repoWorkflow.tone)}`}>
-                    {repoWorkflow.badge}
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full border px-2 py-0.5 text-xs ${workflowBadgeClassName(repoWorkflow.tone)}`}>
+                  {repoWorkflow.badge}
+                </span>
+                {workspaceIconCards.map((card) => (
+                  <span
+                    key={card.label}
+                    className={`inline-flex items-center gap-2 rounded-full border px-2 py-0.5 text-xs ${
+                      card.tone === 'success'
+                        ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-50'
+                        : 'border-[#7f6b9d]/30 text-[#b9accf]'
+                    }`}
+                  >
+                    <span aria-hidden="true">{card.icon}</span>
+                    <span className="text-[#8f80aa]">{card.label}</span>
+                    <span className="text-[#efe8ff]">{card.value}</span>
                   </span>
-                  <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-xs text-[#b9accf]">
-                    GitHub {token ? `connected${authedUser ? ` as ${authedUser}` : ''}` : 'not connected'}
-                  </span>
-                  <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-xs text-[#b9accf]">
-                    {hasLoadedRepos ? `${filteredRepos.length}/${repos.length} writable repos visible` : 'browse repos after loading'}
-                  </span>
-                  <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-xs text-[#b9accf]">
-                    {repoWorkspace.selectionLabel}
-                  </span>
-                </div>
-                <div>
-                  <div className="text-xs uppercase tracking-[0.18em] text-[#8ea6e8]">Workspace</div>
-                  <div className="mt-1 text-lg font-semibold text-[#efe8ff]">{repoWorkspace.ownerRepo}</div>
-                  <div className="mt-1 text-[#aa9ac5]">{selectedRepoSummary}</div>
-                  <div className="mt-2 text-xs text-[#cdbfe4]">{repoWorkspace.selectionDetail}</div>
-                  <div className="mt-1 text-xs text-[#8f80aa]">{repoWorkspace.publishDetail}</div>
-                </div>
-                <div>
-                  <div className="text-sm font-semibold text-[#efe8ff]">{repoWorkflow.headline}</div>
-                  <div className="mt-1 text-xs text-[#b9accf]">{repoWorkflow.detail}</div>
-                  <div className="mt-2 text-xs text-[#8f80aa]">{repoWorkspace.nextStep}</div>
-                </div>
+                ))}
               </div>
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={workspacePrimaryAction}
-                  className={btn(false)}
-                  disabled={loading || (repoWorkflow.primaryAction === 'loadRepos' && !token)}
-                >
-                  {repoWorkflow.primaryActionLabel}
-                </button>
-                <button type="button" className={miniBtn} onClick={startNewDraft} disabled={loading}>New draft</button>
-                <button type="button" className={miniBtn} onClick={() => setFullscreen((v) => !v)} disabled={loading} title="Ctrl+Shift+F">Fullscreen</button>
+              <div>
+                <div className="text-xs uppercase tracking-[0.18em] text-[#8ea6e8]">Workspace</div>
+                <div className="mt-1 text-lg font-semibold text-[#efe8ff]">{repoWorkspace.ownerRepo}</div>
+                <div className="mt-1 text-[#aa9ac5]">{selectedRepoSummary}</div>
+                <div className="mt-2 text-xs text-[#cdbfe4]">{repoWorkflow.detail}</div>
               </div>
             </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={workspacePrimaryAction}
+                className={btn(false)}
+                disabled={loading || (repoWorkflow.primaryAction === 'loadRepos' && !token)}
+              >
+                {repoWorkflow.primaryActionLabel}
+              </button>
+              <button type="button" className={miniBtn} onClick={startNewDraft} disabled={loading}>New draft</button>
+              <button type="button" className={miniBtn} onClick={() => setFullscreen((v) => !v)} disabled={loading}>Fullscreen</button>
+            </div>
+          </div>
 
-            <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-              <div className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Publish target</div>
-                    <div className="mt-1 text-[#8f80aa]">Next post file</div>
-                    <div className="font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
-                  </div>
-                  <div className="rounded-lg border border-[#7f6b9d]/15 bg-[#0d0a15]/70 px-3 py-2 text-right">
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Current post</div>
-                    <div className="mt-1 font-semibold text-[#efe8ff]">{activeSlug ? selectedPostMeta?.title || activeSlug : 'New draft'}</div>
-                    <div className="mt-1 text-[#aa9ac5]">{activeSlug ? `Slug: ${activeSlug}` : 'Publishing uses the title-derived slug above.'}</div>
-                  </div>
+          <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+            <div className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Publish target</div>
+                  <div className="mt-1 text-[#8f80aa]">Next post file</div>
+                  <div className="font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
                 </div>
-                <div className="mt-3 grid gap-2 md:grid-cols-3">
-                  <div>
-                    <div className="text-[#9c8db7]">Branch</div>
-                    <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
-                  </div>
-                  <div>
-                    <div className="text-[#9c8db7]">Content directory</div>
-                    <div className="font-medium text-[#efe8ff]">{publishTarget.baseDirLabel}</div>
-                  </div>
-                  <div>
-                    <div className="text-[#9c8db7]">SQLite index</div>
-                    <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
-                  </div>
+                <div className="rounded-lg border border-[#7f6b9d]/15 bg-[#0d0a15]/70 px-3 py-2 text-right">
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Current post</div>
+                  <div className="mt-1 font-semibold text-[#efe8ff]">{activeSlug ? selectedPostMeta?.title || activeSlug : 'New draft'}</div>
+                  <div className="mt-1 text-[#aa9ac5]">{activeSlug ? `Slug: ${activeSlug}` : 'Publishing uses the title-derived slug above.'}</div>
                 </div>
-                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-[#7f6b9d]/15 pt-3">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Advanced overrides</div>
-                    <div className="mt-1 text-[#8f80aa]">{repoWorkspace.settingsHint}</div>
-                  </div>
-                  <button type="button" className={miniBtn} onClick={() => setTab('settings')} disabled={loading}>Advanced settings</button>
-                </div>
-                <div className="mt-3 text-xs text-[#8f80aa]">Latest activity: {statusText}</div>
               </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                <div>
+                  <div className="text-[#9c8db7]">Branch</div>
+                  <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
+                </div>
+                <div>
+                  <div className="text-[#9c8db7]">Content directory</div>
+                  <div className="font-medium text-[#efe8ff]">{publishTarget.baseDirLabel}</div>
+                </div>
+                <div>
+                  <div className="text-[#9c8db7]">SQLite index</div>
+                  <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
+                </div>
+              </div>
+              <div className="mt-3 text-xs text-[#8f80aa]">Latest activity: {statusText}</div>
+            </div>
 
-              <div className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">{workspaceSwitcherTitle}</div>
-                    <div className="mt-1 text-[#aa9ac5]">{workspaceSwitcherDescription}</div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
-                    <button type="button" className={miniBtn} onClick={loadRepos} disabled={!token || loading}>Reload repos</button>
-                  </div>
-                </div>
-                <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
-                  <input
-                    className={input}
-                    placeholder="Search writable repos"
-                    value={repoQuery}
-                    onChange={(e) => setRepoQuery(e.target.value)}
-                    disabled={!hasLoadedRepos}
-                  />
-                  <div className="rounded-lg border border-dashed border-[#7f6b9d]/20 px-3 py-2 text-[11px] text-[#8f80aa]">
-                    {hasLoadedRepos ? 'Repo cards below update as you search.' : 'Repo cards appear here after you load writable repos.'}
+            <div className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
+              <button
+                type="button"
+                className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/80 px-3 py-3 text-left"
+                onClick={() => setSettingsOpen((open) => !open)}
+                aria-expanded={settingsOpen}
+              >
+                <div>
+                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Workspace settings</div>
+                  <div className="mt-1 text-sm text-[#efe8ff]">
+                    {hasSavedAuth ? 'Saved auth detected — repo and posts auto-load by default.' : 'Connect GitHub or paste a repo locator to start.'}
                   </div>
                 </div>
-                <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
-                  <input
-                    className={input}
-                    placeholder="x-does/blog or https://github.com/x-does/blog"
-                    value={repoLocator}
-                    onChange={(e) => setRepoLocator(e.target.value)}
-                  />
-                  <button type="button" className={miniBtn} onClick={applyRepoLocator} disabled={loading}>Use locator</button>
-                </div>
-                {hasLoadedRepos ? (
-                  <div className="mt-3 grid gap-2 md:grid-cols-2">
-                    {filteredRepos.slice(0, 8).map((r) => (
-                      <button
-                        key={r.id}
-                        type="button"
-                        className={`rounded-xl border p-3 text-left transition hover:border-[#a58ac8]/55 hover:bg-[#171123] ${
-                          publishTarget.ownerRepo === r.full_name
-                            ? 'border-[#a58ac8]/60 bg-[#171123]'
-                            : 'border-[#7f6b9d]/25 bg-[#110d19]/45'
-                        }`}
-                        onClick={() => applySelectedRepo(r.full_name, true)}
-                      >
-                        <div className="flex flex-wrap items-center gap-2">
-                          <strong className="text-[#efe8ff]">{r.full_name}</strong>
-                          <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">{r.default_branch}</span>
-                          {r.private ? <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">private</span> : null}
+                <span className="text-lg text-[#cdbfe4]" aria-hidden="true">{settingsOpen ? '−' : '+'}</span>
+              </button>
+
+              {settingsOpen ? (
+                <div className="mt-3 space-y-3 rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/65 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">{workspaceSwitcherTitle}</div>
+                      <div className="mt-1 text-[#aa9ac5]">{workspaceSwitcherDescription}</div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
+                      <button type="button" className={miniBtn} onClick={loadRepos} disabled={!token || loading}>Reload repos</button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+                    <input
+                      className={input}
+                      placeholder="Search writable repos"
+                      value={repoQuery}
+                      onChange={(e) => setRepoQuery(e.target.value)}
+                      disabled={!hasLoadedRepos}
+                    />
+                    <div className="rounded-lg border border-dashed border-[#7f6b9d]/20 px-3 py-2 text-[11px] text-[#8f80aa]">
+                      {hasLoadedRepos ? 'Repo cards below update as you search.' : 'Repo cards appear here after writable repos load.'}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+                    <input
+                      className={input}
+                      placeholder="x-does/blog or https://github.com/x-does/blog"
+                      value={repoLocator}
+                      onChange={(e) => setRepoLocator(e.target.value)}
+                    />
+                    <button type="button" className={miniBtn} onClick={applyRepoLocator} disabled={loading}>Use locator</button>
+                  </div>
+
+                  {hasLoadedRepos ? (
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {filteredRepos.slice(0, 8).map((r) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          className={`rounded-xl border p-3 text-left transition hover:border-[#a58ac8]/55 hover:bg-[#171123] ${
+                            publishTarget.ownerRepo === r.full_name
+                              ? 'border-[#a58ac8]/60 bg-[#171123]'
+                              : 'border-[#7f6b9d]/25 bg-[#110d19]/45'
+                          }`}
+                          onClick={() => applySelectedRepo(r.full_name, true)}
+                        >
+                          <div className="flex flex-wrap items-center gap-2">
+                            <strong className="text-[#efe8ff]">{r.full_name}</strong>
+                            <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">{r.default_branch}</span>
+                            {r.private ? <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">private</span> : null}
+                          </div>
+                          {r.description ? <div className="mt-1 text-xs text-[#b9accf]">{r.description}</div> : null}
+                          <div className="mt-2 text-xs text-[#8ea6e8]">{publishTarget.ownerRepo === r.full_name ? 'Selected workspace' : 'Select repo and load posts'}</div>
+                        </button>
+                      ))}
+                      {filteredRepos.length === 0 ? (
+                        <div className="rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
+                          No writable repos match that search. You can still paste owner/repo above.
                         </div>
-                        {r.description ? <div className="mt-1 text-xs text-[#b9accf]">{r.description}</div> : null}
-                        <div className="mt-2 text-xs text-[#8ea6e8]">{publishTarget.ownerRepo === r.full_name ? 'Selected workspace' : 'Select repo and load posts'}</div>
-                      </button>
-                    ))}
-                    {filteredRepos.length === 0 ? (
-                      <div className="rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
-                        No writable repos match that search. You can still paste owner/repo above.
-                      </div>
-                    ) : null}
+                      ) : null}
+                    </div>
+                  ) : (
+                    <div className="rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
+                      Load writable repos to browse targets, or keep using the repository locator above.
+                    </div>
+                  )}
+
+                  {filteredRepos.length > 8 ? (
+                    <div className="text-xs text-[#9c8db7]">Showing first 8 matches here. Narrow search if you need a different repo.</div>
+                  ) : null}
+
+                  <div className="grid gap-3 md:grid-cols-3">
+                    <label className={label}>Branch<input className={input} value={settings.branch} onChange={(e) => setSettings((s) => ({ ...s, branch: e.target.value.trim() }))} /></label>
+                    <label className={label}>Blogs base directory<input className={input} value={settings.baseDir} onChange={(e) => setSettings((s) => ({ ...s, baseDir: e.target.value.trim() }))} /></label>
+                    <label className={label}>SQLite path<input className={input} value={settings.sqlitePath} onChange={(e) => setSettings((s) => ({ ...s, sqlitePath: e.target.value.trim() }))} /></label>
                   </div>
-                ) : (
-                  <div className="mt-3 rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
-                    Load writable repos to browse targets, or keep using the repository locator above.
-                  </div>
-                )}
-                {filteredRepos.length > 8 ? (
-                  <div className="mt-2 text-xs text-[#9c8db7]">Showing first 8 matches here. Narrow search if you need a different repo.</div>
-                ) : null}
-              </div>
+                  <div className="text-xs text-[#8f80aa]">{repoWorkspace.settingsHint}</div>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1291,7 +1347,6 @@ export default function BlogEditApp() {
             <div className="sticky top-3 z-10 rounded-lg border border-[#7f6b9d]/25 bg-[#0d0a15]/95 p-3 text-xs backdrop-blur">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Formatting toolbar</div>
-                <div className="text-[11px] text-[#8f80aa]">Ctrl+Shift+Enter toggles edit/preview · Ctrl+Shift+` cycles 3-view</div>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n# Heading 1\n')}>H1</button>
@@ -1321,7 +1376,6 @@ export default function BlogEditApp() {
               <button type="button" className={btn(viewMode === 'split')} onClick={() => setViewMode('split')} aria-pressed={viewMode === 'split'}>Split</button>
               <button type="button" className={btn(viewMode === 'edit')} onClick={() => setViewMode('edit')} aria-pressed={viewMode === 'edit'}>Editor only</button>
               <button type="button" className={btn(viewMode === 'preview')} onClick={() => setViewMode('preview')} aria-pressed={viewMode === 'preview'}>Preview only</button>
-              <span className="ml-1 text-xs text-[#aa9ac5]">Ctrl+Shift+Enter toggles edit/preview · Ctrl+Shift+` cycles 3-view</span>
             </div>
 
             <div className={viewMode === 'split' ? 'grid gap-3 md:grid-cols-2' : 'grid gap-3'}>
@@ -1371,22 +1425,6 @@ export default function BlogEditApp() {
                 </article>
               ))}
               {filtered.length === 0 ? <div className="text-[#b9accf]">No posts.</div> : null}
-            </div>
-          </div>
-        )}
-
-        {tab === 'settings' && (
-          <div className="mt-6 grid gap-3">
-            <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-3 text-sm text-[#c7bbdc]">
-              <div className="font-semibold text-[#efe8ff]">Advanced publish settings</div>
-              <div className="mt-1 text-xs text-[#aa9ac5]">Repository selection lives in the workspace card above. Use this area only for branch, base directory, or sqlite overrides.</div>
-            </div>
-            <label className={label}>Branch<input className={input} value={settings.branch} onChange={(e) => setSettings((s) => ({ ...s, branch: e.target.value.trim() }))} /></label>
-            <label className={label}>Blogs base directory<input className={input} value={settings.baseDir} onChange={(e) => setSettings((s) => ({ ...s, baseDir: e.target.value.trim() }))} /></label>
-            <label className={label}>SQLite path<input className={input} value={settings.sqlitePath} onChange={(e) => setSettings((s) => ({ ...s, sqlitePath: e.target.value.trim() }))} /></label>
-            <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#0d0a15]/80 p-3 text-xs text-[#cdbfe4]">
-              <div className="font-semibold text-[#efe8ff]">Current target</div>
-              <div className="mt-1 text-[#aa9ac5]">Publishing is currently pointed at {settings.owner}/{settings.repo} on {settings.branch}. Change repositories from the workspace switcher above, then come back here only if you need a path override.</div>
             </div>
           </div>
         )}
