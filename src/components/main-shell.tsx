@@ -30,11 +30,13 @@ const activePillClassName =
 const disabledPillClassName =
   `${basePillClassName} inline-flex cursor-not-allowed items-center gap-2 border-[#7f6b9d]/12 text-[#8f82a8] opacity-75`;
 
-export function InlineMenu() {
+export function InlineMenu({ hideHome = false }: { hideHome?: boolean }) {
+  const items = hideHome ? MENU.filter((item) => item.label !== 'Home') : MENU;
+
   return (
     <nav className="text-sm leading-7 text-[#c8bcdd]">
       <div className="flex flex-col items-start gap-y-1">
-        {MENU.map((item) => {
+        {items.map((item) => {
           if (item.disabled) {
             return (
               <span key={item.label} aria-disabled="true" className="text-[#8f82a8]">

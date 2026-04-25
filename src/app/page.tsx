@@ -18,7 +18,7 @@ export default function HomePage() {
 
       <div className="w-full rounded-2xl border border-[#7f6b9d]/18 bg-[#0f0c17]/40 p-6 text-[#cfc3e6] md:w-[26rem]">
         <div className="text-sm leading-7">
-          <InlineMenu />
+          <InlineMenu hideHome />
         </div>
       </div>
     </section>
