@@ -1,0 +1,3 @@
+Hostinger auto-deploy trigger commit.
+Timestamp: 2026-04-25T06:00:00Z
+Purpose: nudge autodeploy after transient 503 / SSH shell-access investigation.
