@@ -25,20 +25,9 @@ export default async function BlogPostPage({ params }: { params: Params }) {
 
   return (
     <article className="py-10">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <p className="text-xs uppercase tracking-[0.22em] text-[#8ea6e8]">Main Blog Post</p>
-          <h1 className="mt-2 font-display text-4xl font-bold text-[#f3edff] sm:text-5xl">{post.title}</h1>
-          <p className="mt-3 max-w-3xl text-[#c6badb]">{post.description || 'No description.'}</p>
-        </div>
-        <div className="flex flex-wrap gap-2 text-sm">
-          <Link href="/blog" className="rounded-lg border border-[#7f6b9d]/30 bg-[#1a1328] px-3 py-2 text-[#efe8ff] hover:border-[#a58ac8]/50">
-            Back to blog
-          </Link>
-          <Link href={`/blog-edit?slug=${encodeURIComponent(post.slug)}`} className="rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/35 px-3 py-2 text-[#cdbfe4] hover:text-white">
-            Open in editor
-          </Link>
-        </div>
+      <div>
+        <h1 className="font-display text-4xl font-bold text-[#f3edff] sm:text-5xl">{post.title}</h1>
+        <p className="mt-3 max-w-3xl text-[#c6badb]">{post.description || 'No description.'}</p>
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2 text-xs">
