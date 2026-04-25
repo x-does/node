@@ -37,7 +37,7 @@ export async function BlogPage({ searchParams }: { searchParams: SearchParams })
         <button type="submit" className="rounded-lg border border-[#7f6b9d]/25 bg-[#1a1328] px-4 py-2 text-[#efe8ff] hover:border-[#a58ac8]/60">Search</button>
       </form>
 
-      <p className="mt-3 text-xs uppercase tracking-[0.16em] text-[#a796c3]">{posts.length} post{posts.length === 1 ? '' : 's'} indexed · use @refs in editor to cross-link posts</p>
+      <p className="mt-3 text-xs uppercase tracking-[0.16em] text-[#a796c3]">{posts.length} post{posts.length === 1 ? '' : 's'} indexed</p>
 
       <div className="mt-7 grid gap-3">
         {posts.length === 0 ? (
