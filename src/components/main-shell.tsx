@@ -35,11 +35,11 @@ export function InlineMenu({ hideHome = false }: { hideHome?: boolean }) {
 
   return (
     <nav className="text-sm leading-7 text-[#c8bcdd]">
-      <div className="flex flex-col items-start gap-y-1">
+      <div className="flex w-full flex-col items-stretch gap-y-1">
         {items.map((item) => {
           if (item.disabled) {
             return (
-              <span key={item.label} aria-disabled="true" className="text-[#8f82a8]">
+              <span key={item.label} aria-disabled="true" className="block w-full text-[#8f82a8]">
                 {item.label} Soon
               </span>
             );
@@ -52,7 +52,7 @@ export function InlineMenu({ hideHome = false }: { hideHome?: boolean }) {
                 href={item.href}
                 target="_blank"
                 rel="noreferrer"
-                className="transition-colors hover:text-white"
+                className="block w-full transition-colors hover:text-white"
               >
                 {item.label}
               </a>
@@ -60,7 +60,7 @@ export function InlineMenu({ hideHome = false }: { hideHome?: boolean }) {
           }
 
           return (
-            <Link key={item.label} href={item.href!} className="transition-colors hover:text-white">
+            <Link key={item.label} href={item.href!} className="block w-full transition-colors hover:text-white">
               {item.label}
             </Link>
           );
