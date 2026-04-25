@@ -57,6 +57,17 @@ type WorkspaceIconCard = {
   value: string;
   tone?: 'default' | 'success';
 };
+
+type WorkspaceAccordionCard = {
+  key: 'publish-target' | 'workspace-settings';
+  eyebrow: string;
+  title: string;
+  summary: string;
+  detail?: string;
+  isOpen: boolean;
+  onToggle: () => void;
+};
+
 type ToastTone = 'success' | 'error' | 'info';
 
 type Toast = {
@@ -423,6 +434,7 @@ export default function BlogEditApp() {
   const [tab, setTab] = useState<Tab>('editor');
   const [viewMode, setViewMode] = useState<ViewMode>('split');
   const [fullscreen, setFullscreen] = useState(false);
+  const [publishTargetOpen, setPublishTargetOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [didAutoLoadWorkspace, setDidAutoLoadWorkspace] = useState(false);
 
@@ -1109,6 +1121,26 @@ export default function BlogEditApp() {
     },
   ];
   const hasSavedAuth = Boolean(token);
+  const workspaceAccordionCards: WorkspaceAccordionCard[] = [
+    {
+      key: 'publish-target',
+      eyebrow: 'Publish target',
+      title: publishTarget.postPath,
+      summary: activeSlug ? `Current post: ${selectedPostMeta?.title || activeSlug}` : 'Current post: New draft',
+      detail: `Branch ${publishTarget.branchLabel} · Dir ${publishTarget.baseDirLabel} · SQLite ${publishTarget.sqliteLabel}`,
+      isOpen: publishTargetOpen,
+      onToggle: () => setPublishTargetOpen((open) => !open),
+    },
+    {
+      key: 'workspace-settings',
+      eyebrow: 'Workspace settings',
+      title: hasSavedAuth ? 'Saved auth detected' : 'Connect or paste a repo',
+      summary: hasSavedAuth ? 'Repo and post lists auto-load by default.' : 'Connect GitHub or use a repo locator to start.',
+      detail: hasLoadedRepos ? `${filteredRepos.length} repo option${filteredRepos.length === 1 ? '' : 's'} ready` : 'Repo list loads here once writable repos are fetched.',
+      isOpen: settingsOpen,
+      onToggle: () => setSettingsOpen((open) => !open),
+    },
+  ];
 
   return (
     <div className={fullscreen ? 'fixed inset-0 z-50 overflow-auto bg-[#07060c] p-6' : ''}>
@@ -1167,136 +1199,139 @@ export default function BlogEditApp() {
             </div>
           </div>
 
-          <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-            <div className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Publish target</div>
-                  <div className="mt-1 text-[#8f80aa]">Next post file</div>
-                  <div className="font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
-                </div>
-                <div className="rounded-lg border border-[#7f6b9d]/15 bg-[#0d0a15]/70 px-3 py-2 text-right">
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Current post</div>
-                  <div className="mt-1 font-semibold text-[#efe8ff]">{activeSlug ? selectedPostMeta?.title || activeSlug : 'New draft'}</div>
-                  <div className="mt-1 text-[#aa9ac5]">{activeSlug ? `Slug: ${activeSlug}` : 'Publishing uses the title-derived slug above.'}</div>
-                </div>
-              </div>
-              <div className="mt-3 grid gap-2 md:grid-cols-3">
-                <div>
-                  <div className="text-[#9c8db7]">Branch</div>
-                  <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
-                </div>
-                <div>
-                  <div className="text-[#9c8db7]">Content directory</div>
-                  <div className="font-medium text-[#efe8ff]">{publishTarget.baseDirLabel}</div>
-                </div>
-                <div>
-                  <div className="text-[#9c8db7]">SQLite index</div>
-                  <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
-                </div>
-              </div>
-              <div className="mt-3 text-xs text-[#8f80aa]">Latest activity: {statusText}</div>
-            </div>
-
-            <div className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
-              <button
-                type="button"
-                className="flex w-full items-center justify-between gap-3 rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/80 px-3 py-3 text-left"
-                onClick={() => setSettingsOpen((open) => !open)}
-                aria-expanded={settingsOpen}
-              >
-                <div>
-                  <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Workspace settings</div>
-                  <div className="mt-1 text-sm text-[#efe8ff]">
-                    {hasSavedAuth ? 'Saved auth detected — repo and posts auto-load by default.' : 'Connect GitHub or paste a repo locator to start.'}
+          <div className="mt-4 grid gap-3 xl:grid-cols-2">
+            {workspaceAccordionCards.map((card) => (
+              <div key={card.key} className="rounded-xl border border-[#7f6b9d]/15 bg-[#110d19]/55 p-3 text-xs text-[#cdbfe4]">
+                <button
+                  type="button"
+                  className="flex w-full items-start justify-between gap-3 rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/80 px-3 py-3 text-left"
+                  onClick={card.onToggle}
+                  aria-expanded={card.isOpen}
+                >
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">{card.eyebrow}</div>
+                    <div className="mt-1 text-sm font-semibold text-[#efe8ff]">{card.title}</div>
+                    <div className="mt-1 text-[#cdbfe4]">{card.summary}</div>
+                    {card.detail ? <div className="mt-1 text-[11px] text-[#8f80aa]">{card.detail}</div> : null}
                   </div>
-                </div>
-                <span className="text-lg text-[#cdbfe4]" aria-hidden="true">{settingsOpen ? '−' : '+'}</span>
-              </button>
+                  <span className="text-lg text-[#cdbfe4]" aria-hidden="true">{card.isOpen ? '−' : '+'}</span>
+                </button>
 
-              {settingsOpen ? (
-                <div className="mt-3 space-y-3 rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/65 p-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">{workspaceSwitcherTitle}</div>
-                      <div className="mt-1 text-[#aa9ac5]">{workspaceSwitcherDescription}</div>
+                {card.key === 'publish-target' && card.isOpen ? (
+                  <div className="mt-3 space-y-3 rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/65 p-3">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Next post file</div>
+                        <div className="mt-1 font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
+                      </div>
+                      <div className="rounded-lg border border-[#7f6b9d]/15 bg-[#0d0a15]/70 px-3 py-2 text-right">
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Current post</div>
+                        <div className="mt-1 font-semibold text-[#efe8ff]">{activeSlug ? selectedPostMeta?.title || activeSlug : 'New draft'}</div>
+                        <div className="mt-1 text-[#aa9ac5]">{activeSlug ? `Slug: ${activeSlug}` : 'Publishing uses the title-derived slug above.'}</div>
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
-                      <button type="button" className={miniBtn} onClick={loadRepos} disabled={!token || loading}>Reload repos</button>
+                    <div className="grid gap-2 md:grid-cols-3">
+                      <div>
+                        <div className="text-[#9c8db7]">Branch</div>
+                        <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
+                      </div>
+                      <div>
+                        <div className="text-[#9c8db7]">Content directory</div>
+                        <div className="font-medium text-[#efe8ff]">{publishTarget.baseDirLabel}</div>
+                      </div>
+                      <div>
+                        <div className="text-[#9c8db7]">SQLite index</div>
+                        <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
+                      </div>
                     </div>
+                    <div className="text-xs text-[#8f80aa]">Latest activity: {statusText}</div>
                   </div>
+                ) : null}
 
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
-                    <input
-                      className={input}
-                      placeholder="Search writable repos"
-                      value={repoQuery}
-                      onChange={(e) => setRepoQuery(e.target.value)}
-                      disabled={!hasLoadedRepos}
-                    />
-                    <div className="rounded-lg border border-dashed border-[#7f6b9d]/20 px-3 py-2 text-[11px] text-[#8f80aa]">
-                      {hasLoadedRepos ? 'Repo cards below update as you search.' : 'Repo cards appear here after writable repos load.'}
+                {card.key === 'workspace-settings' && card.isOpen ? (
+                  <div className="mt-3 space-y-3 rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/65 p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">{workspaceSwitcherTitle}</div>
+                        <div className="mt-1 text-[#aa9ac5]">{workspaceSwitcherDescription}</div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" className={miniBtn} onClick={() => setRepoQuery('')} disabled={!repoQuery}>Clear search</button>
+                        <button type="button" className={miniBtn} onClick={loadRepos} disabled={!token || loading}>Reload repos</button>
+                      </div>
                     </div>
-                  </div>
 
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
-                    <input
-                      className={input}
-                      placeholder="x-does/blog or https://github.com/x-does/blog"
-                      value={repoLocator}
-                      onChange={(e) => setRepoLocator(e.target.value)}
-                    />
-                    <button type="button" className={miniBtn} onClick={applyRepoLocator} disabled={loading}>Use locator</button>
-                  </div>
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+                      <input
+                        className={input}
+                        placeholder="Search writable repos"
+                        value={repoQuery}
+                        onChange={(e) => setRepoQuery(e.target.value)}
+                        disabled={!hasLoadedRepos}
+                      />
+                      <div className="rounded-lg border border-dashed border-[#7f6b9d]/20 px-3 py-2 text-[11px] text-[#8f80aa]">
+                        {hasLoadedRepos ? 'Repo cards below update as you search.' : 'Repo cards appear here after writable repos load.'}
+                      </div>
+                    </div>
 
-                  {hasLoadedRepos ? (
-                    <div className="grid gap-2 md:grid-cols-2">
-                      {filteredRepos.slice(0, 8).map((r) => (
-                        <button
-                          key={r.id}
-                          type="button"
-                          className={`rounded-xl border p-3 text-left transition hover:border-[#a58ac8]/55 hover:bg-[#171123] ${
-                            publishTarget.ownerRepo === r.full_name
-                              ? 'border-[#a58ac8]/60 bg-[#171123]'
-                              : 'border-[#7f6b9d]/25 bg-[#110d19]/45'
-                          }`}
-                          onClick={() => applySelectedRepo(r.full_name, true)}
-                        >
-                          <div className="flex flex-wrap items-center gap-2">
-                            <strong className="text-[#efe8ff]">{r.full_name}</strong>
-                            <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">{r.default_branch}</span>
-                            {r.private ? <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">private</span> : null}
+                    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_180px]">
+                      <input
+                        className={input}
+                        placeholder="x-does/blog or https://github.com/x-does/blog"
+                        value={repoLocator}
+                        onChange={(e) => setRepoLocator(e.target.value)}
+                      />
+                      <button type="button" className={miniBtn} onClick={applyRepoLocator} disabled={loading}>Use locator</button>
+                    </div>
+
+                    {hasLoadedRepos ? (
+                      <div className="grid gap-2 md:grid-cols-2">
+                        {filteredRepos.slice(0, 8).map((r) => (
+                          <button
+                            key={r.id}
+                            type="button"
+                            className={`rounded-xl border p-3 text-left transition hover:border-[#a58ac8]/55 hover:bg-[#171123] ${
+                              publishTarget.ownerRepo === r.full_name
+                                ? 'border-[#a58ac8]/60 bg-[#171123]'
+                                : 'border-[#7f6b9d]/25 bg-[#110d19]/45'
+                            }`}
+                            onClick={() => applySelectedRepo(r.full_name, true)}
+                          >
+                            <div className="flex flex-wrap items-center gap-2">
+                              <strong className="text-[#efe8ff]">{r.full_name}</strong>
+                              <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">{r.default_branch}</span>
+                              {r.private ? <span className="rounded-full border border-[#7f6b9d]/30 px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-[#aa9ac5]">private</span> : null}
+                            </div>
+                            {r.description ? <div className="mt-1 text-xs text-[#b9accf]">{r.description}</div> : null}
+                            <div className="mt-2 text-xs text-[#8ea6e8]">{publishTarget.ownerRepo === r.full_name ? 'Selected workspace' : 'Select repo and load posts'}</div>
+                          </button>
+                        ))}
+                        {filteredRepos.length === 0 ? (
+                          <div className="rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
+                            No writable repos match that search. You can still paste owner/repo above.
                           </div>
-                          {r.description ? <div className="mt-1 text-xs text-[#b9accf]">{r.description}</div> : null}
-                          <div className="mt-2 text-xs text-[#8ea6e8]">{publishTarget.ownerRepo === r.full_name ? 'Selected workspace' : 'Select repo and load posts'}</div>
-                        </button>
-                      ))}
-                      {filteredRepos.length === 0 ? (
-                        <div className="rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
-                          No writable repos match that search. You can still paste owner/repo above.
-                        </div>
-                      ) : null}
-                    </div>
-                  ) : (
-                    <div className="rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
-                      Load writable repos to browse targets, or keep using the repository locator above.
-                    </div>
-                  )}
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="rounded-xl border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#b9accf]">
+                        Load writable repos to browse targets, or keep using the repository locator above.
+                      </div>
+                    )}
 
-                  {filteredRepos.length > 8 ? (
-                    <div className="text-xs text-[#9c8db7]">Showing first 8 matches here. Narrow search if you need a different repo.</div>
-                  ) : null}
+                    {filteredRepos.length > 8 ? (
+                      <div className="text-xs text-[#9c8db7]">Showing first 8 matches here. Narrow search if you need a different repo.</div>
+                    ) : null}
 
-                  <div className="grid gap-3 md:grid-cols-3">
-                    <label className={label}>Branch<input className={input} value={settings.branch} onChange={(e) => setSettings((s) => ({ ...s, branch: e.target.value.trim() }))} /></label>
-                    <label className={label}>Blogs base directory<input className={input} value={settings.baseDir} onChange={(e) => setSettings((s) => ({ ...s, baseDir: e.target.value.trim() }))} /></label>
-                    <label className={label}>SQLite path<input className={input} value={settings.sqlitePath} onChange={(e) => setSettings((s) => ({ ...s, sqlitePath: e.target.value.trim() }))} /></label>
+                    <div className="grid gap-3 md:grid-cols-3">
+                      <label className={label}>Branch<input className={input} value={settings.branch} onChange={(e) => setSettings((s) => ({ ...s, branch: e.target.value.trim() }))} /></label>
+                      <label className={label}>Blogs base directory<input className={input} value={settings.baseDir} onChange={(e) => setSettings((s) => ({ ...s, baseDir: e.target.value.trim() }))} /></label>
+                      <label className={label}>SQLite path<input className={input} value={settings.sqlitePath} onChange={(e) => setSettings((s) => ({ ...s, sqlitePath: e.target.value.trim() }))} /></label>
+                    </div>
+                    <div className="text-xs text-[#8f80aa]">{repoWorkspace.settingsHint}</div>
                   </div>
-                  <div className="text-xs text-[#8f80aa]">{repoWorkspace.settingsHint}</div>
-                </div>
-              ) : null}
-            </div>
+                ) : null}
+              </div>
+            ))}
           </div>
         </div>
 
