@@ -4,7 +4,18 @@ import Link from 'next/link';
 import initSqlJs from 'sql.js';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { isGitHubApiConflictError, isGitHubApiNotFoundError } from './github-api';
-import { buildAssetPath, buildMediaMarkdown, getEditorAccessState, renderBlogMediaMarkdown, toAssetSlug } from './media';
+import {
+  type BlogAsset,
+  buildAssetPath,
+  buildMediaMarkdown,
+  getAssetDirectory,
+  getEditorAccessState,
+  listAssetTreeRows,
+  normalizeGitHubAssetEntries,
+  renderBlogMediaMarkdown,
+  resolveBlogAssetUrl,
+  toAssetSlug,
+} from './media';
 import { describeDeleteAction, describePublishAction, getPostContentPath } from './post-management';
 import {
   type RepoConnectionSettings,
@@ -165,12 +176,44 @@ async function getTextFile(token: string, ownerRepo: string, path: string, branc
   }
 }
 
+type GitHubContentEntry = {
+  name: string;
+  path: string;
+  type: string;
+  size?: number;
+  sha?: string;
+};
+
 async function getFileSha(token: string, ownerRepo: string, path: string, branch: string) {
   const data = await gh<{ sha?: string }>(
     token,
     `${getApiBase(ownerRepo)}/contents/${encodeGitHubContentPath(path)}?ref=${encodeURIComponent(branch)}`,
   );
   return data.sha;
+}
+
+async function listGitHubDirectory(token: string, ownerRepo: string, path: string, branch: string) {
+  try {
+    const data = await gh<GitHubContentEntry[] | GitHubContentEntry>(
+      token,
+      `${getApiBase(ownerRepo)}/contents/${encodeGitHubContentPath(path)}?ref=${encodeURIComponent(branch)}`,
+    );
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    if (isGitHubApiNotFoundError(error)) return [];
+    throw error;
+  }
+}
+
+async function listGitHubFilesRecursively(token: string, ownerRepo: string, path: string, branch: string): Promise<GitHubContentEntry[]> {
+  const entries = await listGitHubDirectory(token, ownerRepo, path, branch);
+  const nested = await Promise.all(
+    entries.map(async (entry) => {
+      if (entry.type === 'dir') return listGitHubFilesRecursively(token, ownerRepo, entry.path, branch);
+      return [entry];
+    }),
+  );
+  return nested.flat();
 }
 
 async function putFile(
@@ -446,6 +489,10 @@ export default function BlogEditApp() {
 
   const [posts, setPosts] = useState<PostMeta[]>([]);
   const [activeSlug, setActiveSlug] = useState('');
+  const [postAssets, setPostAssets] = useState<BlogAsset[]>([]);
+  const [assetsOpen, setAssetsOpen] = useState(false);
+  const [selectedAssetPath, setSelectedAssetPath] = useState('');
+  const [replaceAssetPath, setReplaceAssetPath] = useState('');
   const [query, setQuery] = useState('');
   const [repoQuery, setRepoQuery] = useState('');
   const [loading, setLoading] = useState(false);
@@ -630,6 +677,10 @@ export default function BlogEditApp() {
     setRefs('');
     setLinks('');
     setMarkdown('# New post\n\nStart writing...');
+    setPostAssets([]);
+    setSelectedAssetPath('');
+    setReplaceAssetPath('');
+    setAssetsOpen(false);
     if (clearPosts) {
       setPosts([]);
     }
@@ -669,7 +720,32 @@ export default function BlogEditApp() {
     });
   }
 
-  async function onPickMedia(file: File) {
+  async function loadAssetsForSlug(slug: string, target = settings) {
+    if (!token || !slug) {
+      setPostAssets([]);
+      setSelectedAssetPath('');
+      return [];
+    }
+
+    const ownerRepo = `${target.owner}/${target.repo}`;
+    const assetDirectory = getAssetDirectory(slug, target.baseDir);
+    const entries = await listGitHubFilesRecursively(token, ownerRepo, assetDirectory, target.branch);
+    const assets = normalizeGitHubAssetEntries(entries, assetDirectory);
+    setPostAssets(assets);
+    setSelectedAssetPath((current) => (assets.some((asset) => asset.relativePath === current) ? current : assets[0]?.relativePath || ''));
+    return assets;
+  }
+
+  function upsertPostAsset(asset: BlogAsset) {
+    setPostAssets((current) => {
+      const without = current.filter((item) => item.relativePath !== asset.relativePath);
+      return [...without, asset].sort((a, b) => a.relativePath.localeCompare(b.relativePath));
+    });
+    setSelectedAssetPath(asset.relativePath);
+    setAssetsOpen(true);
+  }
+
+  async function uploadAssetFile(file: File, options: { replaceRelativePath?: string } = {}) {
     if (!token) {
       notify('error', 'Connect GitHub before uploading media.', 'Media upload blocked.', 'Upload blocked');
       return;
@@ -682,7 +758,10 @@ export default function BlogEditApp() {
 
     setLoading(true);
     const ownerRepo = `${settings.owner}/${settings.repo}`;
-    const assetPath = buildAssetPath(slug, file.name, settings.baseDir);
+    const assetPath = options.replaceRelativePath
+      ? `${getAssetDirectory(slug, settings.baseDir)}/${options.replaceRelativePath.replace(/^\/+/, '')}`
+      : buildAssetPath(slug, file.name, settings.baseDir);
+    const safeName = assetPath.split('/').pop() || file.name;
     updateStatus(`Uploading ${file.name} to ${assetPath}...`);
     try {
       const buffer = new Uint8Array(await file.arrayBuffer());
@@ -696,16 +775,47 @@ export default function BlogEditApp() {
         assetPath,
         settings.branch,
         bytesToBase64(buffer),
-        `blog: upload asset ${slug}/${file.name}`,
+        options.replaceRelativePath ? `blog: replace asset ${slug}/${options.replaceRelativePath}` : `blog: upload asset ${slug}/${file.name}`,
         sha,
       );
-      insertAtCursor(buildMediaMarkdown({ slug, fileName: file.name, mimeType: file.type || 'application/octet-stream' }));
-      notify('success', `Uploaded ${file.name} to ${assetPath} and embedded it in the editor.`, `Uploaded media to ${assetPath}.`, 'Media uploaded');
+      const relativePath = assetPath.slice(`${getAssetDirectory(slug, settings.baseDir)}/`.length);
+      const updatedSha = await getFileSha(token, ownerRepo, assetPath, settings.branch).catch(() => sha);
+      upsertPostAsset({ name: safeName, relativePath, repoPath: assetPath, size: buffer.byteLength, sha: updatedSha, type: 'file' });
+      if (!options.replaceRelativePath) {
+        insertAtCursor(buildMediaMarkdown({ slug, fileName: relativePath, mimeType: file.type || 'application/octet-stream' }));
+      }
+      notify(
+        'success',
+        options.replaceRelativePath
+          ? `Replaced ${options.replaceRelativePath} with ${file.name} in ${assetPath}.`
+          : `Uploaded ${file.name} to ${assetPath} and embedded it in the editor.`,
+        `Uploaded media to ${assetPath}.`,
+        options.replaceRelativePath ? 'Asset replaced' : 'Media uploaded',
+      );
     } catch (e) {
       notify('error', e instanceof Error ? e.message : 'media upload failed', 'Media upload failed.', 'Upload failed');
     } finally {
       setLoading(false);
     }
+  }
+
+  async function onPickMedia(file: File) {
+    await uploadAssetFile(file);
+  }
+
+  async function onPickReplacement(file: File) {
+    if (!replaceAssetPath) return;
+    await uploadAssetFile(file, { replaceRelativePath: replaceAssetPath });
+    setReplaceAssetPath('');
+  }
+
+  function insertAssetReference(asset: BlogAsset) {
+    const mimeType = asset.name.match(/\.(?:png|jpe?g|gif|webp|avif|svg)$/i)
+      ? 'image/*'
+      : asset.name.match(/\.(?:mp4|webm|mov)$/i)
+        ? 'video/*'
+        : 'application/octet-stream';
+    insertAtCursor(buildMediaMarkdown({ slug: activeDraftSlug, fileName: asset.relativePath, mimeType }));
   }
 
   function onInsertImageUrl() {
@@ -855,9 +965,11 @@ export default function BlogEditApp() {
       const ownerRepo = `${target.owner}/${target.repo}`;
       const postPath = getPostContentPath(post);
       let file: string | null = null;
+      let loadedAssets: BlogAsset[] = [];
 
       if (token) {
         file = await getTextFile(token, ownerRepo, postPath, target.branch);
+        loadedAssets = await loadAssetsForSlug(post.slug, target);
       } else {
         const res = await fetch(`/api/main-blog/post/${encodeURIComponent(post.slug)}?cb=${Date.now()}`, { cache: 'no-store' });
         if (res.ok) {
@@ -884,6 +996,7 @@ export default function BlogEditApp() {
       setLinks(post.links || parsed.links);
       setMarkdown(parsed.markdown);
       setActiveSlug(post.slug);
+      setAssetsOpen(loadedAssets.length > 0);
       if (token) {
         setTab('editor');
         notify('success', `Loaded ${post.slug} into the editor.`, `Editing ${post.slug}.`);
@@ -1018,6 +1131,7 @@ export default function BlogEditApp() {
       });
 
       setActiveSlug(slug);
+      await loadAssetsForSlug(slug);
       notify('success', publishCopy.successMessage, publishCopy.statusMessage, publishCopy.successTitle);
       await loadPostsFromRepo();
     } catch (e) {
@@ -1109,6 +1223,8 @@ export default function BlogEditApp() {
     selectedRepoIsListed,
   });
   const selectedPostMeta = posts.find((post) => post.slug === activeSlug);
+  const selectedAsset = postAssets.find((asset) => asset.relativePath === selectedAssetPath);
+  const assetRows = listAssetTreeRows(postAssets);
   const editorAccess = getEditorAccessState({ token, loading });
   const workspaceSwitcherTitle = hasLoadedRepos ? 'Switch workspace' : 'Choose workspace';
   const workspaceSwitcherDescription = hasLoadedRepos
@@ -1355,6 +1471,86 @@ export default function BlogEditApp() {
               </div>
               <input ref={imagePickerRef} type="file" accept="image/*,video/*,audio/*,application/pdf,text/plain,.md,.pdf" className="hidden" disabled={editorAccess.disabled} onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickMedia(f); e.currentTarget.value = ''; }} />
             </div>
+
+            <details
+              className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-3 text-sm text-[#c7bbdc]"
+              open={assetsOpen}
+              onToggle={(e) => setAssetsOpen(e.currentTarget.open)}
+            >
+              <summary className="cursor-pointer list-none">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Post assets</div>
+                    <div className="mt-1 text-xs text-[#aa9ac5]">
+                      {activeDraftSlug ? `${postAssets.length} file${postAssets.length === 1 ? '' : 's'} in ${getAssetDirectory(activeDraftSlug, settings.baseDir)}` : 'Select or title a post to manage assets.'}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" className={miniBtn} onClick={(e) => { e.preventDefault(); void loadAssetsForSlug(activeDraftSlug); }} disabled={editorAccess.disabled || !activeDraftSlug}>Refresh</button>
+                    <button type="button" className={miniBtn} onClick={(e) => { e.preventDefault(); imagePickerRef.current?.click(); }} disabled={editorAccess.disabled}>Upload</button>
+                  </div>
+                </div>
+              </summary>
+              <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(220px,0.75fr)]">
+                <div className="rounded-lg border border-[#7f6b9d]/20 bg-[#0d0a15]/70 p-2">
+                  {assetRows.length > 0 ? (
+                    <div className="grid gap-1">
+                      {assetRows.map((row) => {
+                        const asset = row.kind === 'file' ? postAssets.find((item) => item.relativePath === row.path) : undefined;
+                        return (
+                          <button
+                            key={row.key}
+                            type="button"
+                            className={`flex w-full items-center justify-between gap-2 rounded px-2 py-1 text-left text-xs ${
+                              selectedAssetPath === row.path ? 'bg-[#241a36] text-white' : 'text-[#cdbfe4] hover:bg-[#171123]'
+                            }`}
+                            style={{ paddingLeft: `${8 + row.depth * 18}px` }}
+                            onClick={() => row.kind === 'file' && setSelectedAssetPath(row.path)}
+                            disabled={row.kind === 'folder'}
+                          >
+                            <span>{row.kind === 'folder' ? '▸' : '•'} {row.label}</span>
+                            {asset?.size ? <span className="text-[10px] text-[#8f80aa]">{Math.ceil(asset.size / 1024)} KB</span> : null}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-dashed border-[#7f6b9d]/25 p-3 text-xs text-[#9c8db7]">
+                      No files found yet. Upload media to create this post's assets folder in GitHub.
+                    </div>
+                  )}
+                </div>
+                <div className="rounded-lg border border-[#7f6b9d]/20 bg-[#0d0a15]/70 p-3 text-xs text-[#cdbfe4]">
+                  {selectedAsset ? (
+                    <div className="space-y-3">
+                      <div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Selected file</div>
+                        <div className="mt-1 break-all font-semibold text-[#efe8ff]">{selectedAsset.relativePath}</div>
+                        <div className="mt-1 break-all text-[#8f80aa]">{selectedAsset.repoPath}</div>
+                      </div>
+                      {selectedAsset.name.match(/\.(?:png|jpe?g|gif|webp|avif|svg)$/i) ? (
+                        <img src={resolveBlogAssetUrl(activeDraftSlug, `assets/${selectedAsset.relativePath}`)} alt={selectedAsset.name} className="max-h-48 w-full rounded-lg border border-[#7f6b9d]/20 object-contain" />
+                      ) : selectedAsset.name.match(/\.(?:mp4|webm|mov)$/i) ? (
+                        <video controls src={resolveBlogAssetUrl(activeDraftSlug, `assets/${selectedAsset.relativePath}`)} className="max-h-48 w-full rounded-lg border border-[#7f6b9d]/20" />
+                      ) : selectedAsset.name.match(/\.(?:mp3|wav|ogg)$/i) ? (
+                        <audio controls src={resolveBlogAssetUrl(activeDraftSlug, `assets/${selectedAsset.relativePath}`)} className="w-full" />
+                      ) : (
+                        <a href={resolveBlogAssetUrl(activeDraftSlug, `assets/${selectedAsset.relativePath}`)} target="_blank" rel="noreferrer" className="text-[#c6a8ff] underline">Open preview/download</a>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        <button type="button" className={miniBtn} onClick={() => insertAssetReference(selectedAsset)} disabled={editorAccess.disabled}>Insert reference</button>
+                        <label className={`${miniBtn} cursor-pointer`}>
+                          Replace
+                          <input type="file" accept="image/*,video/*,audio/*,application/pdf,text/plain,.md,.pdf" className="hidden" disabled={editorAccess.disabled} onClick={() => setReplaceAssetPath(selectedAsset.relativePath)} onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickReplacement(f); e.currentTarget.value = ''; }} />
+                        </label>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="text-[#9c8db7]">Pick a file in the tree to preview, insert, or replace it.</div>
+                  )}
+                </div>
+              </div>
+            </details>
 
             <div className="flex flex-wrap gap-2 text-sm">
               <button type="button" className={btn(viewMode === 'split')} onClick={() => setViewMode('split')} aria-pressed={viewMode === 'split'}>Split</button>

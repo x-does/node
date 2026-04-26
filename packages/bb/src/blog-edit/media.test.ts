@@ -5,6 +5,8 @@ import {
   buildAssetPath,
   buildMediaMarkdown,
   getEditorAccessState,
+  listAssetTreeRows,
+  normalizeGitHubAssetEntries,
   renderBlogMediaMarkdown,
   sanitizeAssetFileName,
 } from './media';
@@ -12,6 +14,7 @@ import {
 test('sanitizeAssetFileName keeps safe names and normalizes unsafe characters', () => {
   assert.equal(sanitizeAssetFileName('My Demo Image (Final).PNG'), 'my-demo-image-final.png');
   assert.equal(sanitizeAssetFileName('../../secret.pdf'), 'secret.pdf');
+  assert.equal(sanitizeAssetFileName('docs/Spec Sheet.PDF'), 'docs/spec-sheet.pdf');
   assert.equal(sanitizeAssetFileName(''), 'asset');
 });
 
@@ -40,6 +43,52 @@ test('renderBlogMediaMarkdown rewrites post-relative asset links for reader page
   assert.match(html, /src="\/api\/main-blog\/assets\/hello-world\/clip\.mp4"/);
   assert.match(html, /href="\/api\/main-blog\/assets\/hello-world\/spec\.pdf"/);
   assert.match(html, /<a href="\/api\/main-blog\/assets\/hello-world\/spec\.pdf" download>Spec<\/a>/);
+});
+
+test('normalizeGitHubAssetEntries returns sorted post-relative files only', () => {
+  assert.deepEqual(
+    normalizeGitHubAssetEntries(
+      [
+        { name: 'hero.png', path: 'blogs/hello-world/assets/hero.png', type: 'file', size: 42, sha: 'a' },
+        { name: 'nested', path: 'blogs/hello-world/assets/nested', type: 'dir' },
+        { name: 'notes.txt', path: 'blogs/hello-world/assets/docs/notes.txt', type: 'file', size: 10, sha: 'b' },
+        { name: 'other.png', path: 'blogs/other/assets/other.png', type: 'file', size: 4, sha: 'c' },
+      ],
+      'blogs/hello-world/assets',
+    ),
+    [
+      {
+        name: 'notes.txt',
+        relativePath: 'docs/notes.txt',
+        repoPath: 'blogs/hello-world/assets/docs/notes.txt',
+        size: 10,
+        sha: 'b',
+        type: 'file',
+      },
+      {
+        name: 'hero.png',
+        relativePath: 'hero.png',
+        repoPath: 'blogs/hello-world/assets/hero.png',
+        size: 42,
+        sha: 'a',
+        type: 'file',
+      },
+    ],
+  );
+});
+
+test('listAssetTreeRows includes compact folder rows before nested files', () => {
+  assert.deepEqual(
+    listAssetTreeRows([
+      { name: 'notes.txt', relativePath: 'docs/notes.txt', repoPath: 'blogs/hello-world/assets/docs/notes.txt', type: 'file' },
+      { name: 'hero.png', relativePath: 'hero.png', repoPath: 'blogs/hello-world/assets/hero.png', type: 'file' },
+    ]),
+    [
+      { key: 'folder:docs', kind: 'folder', label: 'docs', depth: 0, path: 'docs' },
+      { key: 'file:docs/notes.txt', kind: 'file', label: 'notes.txt', depth: 1, path: 'docs/notes.txt' },
+      { key: 'file:hero.png', kind: 'file', label: 'hero.png', depth: 0, path: 'hero.png' },
+    ],
+  );
 });
 
 test('getEditorAccessState blocks editor interactions until authenticated', () => {
