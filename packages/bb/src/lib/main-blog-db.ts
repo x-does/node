@@ -71,7 +71,7 @@ async function fetchGitHubContents(relativePath: string) {
   };
 
   let res = await request(token);
-  if (!res.ok && token) {
+  if (!res.ok && token && res.status !== 404) {
     res = await request(null);
   }
 
