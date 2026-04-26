@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 
-import { loadMainBlogPosts } from './main-blog-db';
+import { contentTypeForPath, getMainBlogRelativePath, loadMainBlogAsset, loadMainBlogPosts } from './main-blog-db';
 
 function makeSqliteFile(filename: string, row: { slug: string; title: string; description: string }) {
   const file = path.join(os.tmpdir(), filename);
@@ -50,6 +50,81 @@ function restoreEnv(name: 'BLOG_SQLITE_PATH' | 'GITHUB_PAT' | 'GITHUB_TOKEN', va
     process.env[name] = value;
   }
 }
+
+test('getMainBlogRelativePath strips absolute and traversal-style path segments', () => {
+  assert.equal(getMainBlogRelativePath('/blogs/hello-world/assets/hero.png'), 'blogs/hello-world/assets/hero.png');
+  assert.equal(getMainBlogRelativePath('../blogs/./hello-world/../assets/spec.pdf'), 'blogs/hello-world/assets/spec.pdf');
+});
+
+test('contentTypeForPath returns useful media content types', () => {
+  assert.equal(contentTypeForPath('hero.PNG'), 'image/png');
+  assert.equal(contentTypeForPath('clip.webm'), 'video/webm');
+  assert.equal(contentTypeForPath('voice.ogg'), 'audio/ogg');
+  assert.equal(contentTypeForPath('spec.pdf'), 'application/pdf');
+  assert.equal(contentTypeForPath('archive.bin'), 'application/octet-stream');
+});
+
+test('loadMainBlogAsset reads assets beside a configured local sqlite file', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'main-blog-asset-'));
+  const sqliteFile = path.join(root, 'blog.sqlite');
+  const assetPath = path.join(root, 'blogs', 'hello-world', 'assets', 'hero.png');
+  const originalBlogSqlitePath = process.env.BLOG_SQLITE_PATH;
+  const originalGithubPat = process.env.GITHUB_PAT;
+  const originalGithubToken = process.env.GITHUB_TOKEN;
+
+  fs.writeFileSync(sqliteFile, 'placeholder sqlite');
+  fs.mkdirSync(path.dirname(assetPath), { recursive: true });
+  fs.writeFileSync(assetPath, Buffer.from('fake-png'));
+  process.env.BLOG_SQLITE_PATH = sqliteFile;
+  delete process.env.GITHUB_PAT;
+  delete process.env.GITHUB_TOKEN;
+
+  try {
+    const loaded = await loadMainBlogAsset('/blogs/hello-world/assets/hero.png');
+    assert.equal(loaded?.contentType, 'image/png');
+    assert.equal(loaded?.bytes.toString(), 'fake-png');
+  } finally {
+    restoreEnv('BLOG_SQLITE_PATH', originalBlogSqlitePath);
+    restoreEnv('GITHUB_PAT', originalGithubPat);
+    restoreEnv('GITHUB_TOKEN', originalGithubToken);
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('loadMainBlogAsset falls back to GitHub contents when local asset is missing', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalBlogSqlitePath = process.env.BLOG_SQLITE_PATH;
+  const originalGithubPat = process.env.GITHUB_PAT;
+  const originalGithubToken = process.env.GITHUB_TOKEN;
+  let requestedUrl = '';
+
+  process.env.BLOG_SQLITE_PATH = path.join(os.tmpdir(), `definitely-missing-${Date.now()}-asset.sqlite`);
+  delete process.env.GITHUB_PAT;
+  delete process.env.GITHUB_TOKEN;
+
+  globalThis.fetch = (async (input) => {
+    requestedUrl = String(input);
+    return new Response(
+      JSON.stringify({
+        encoding: 'base64',
+        content: Buffer.from('remote-asset').toString('base64'),
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
+  }) as typeof fetch;
+
+  try {
+    const loaded = await loadMainBlogAsset('blogs/hello-world/assets/spec.pdf');
+    assert.match(requestedUrl, /contents\/blogs\/hello-world\/assets\/spec\.pdf/);
+    assert.equal(loaded?.contentType, 'application/pdf');
+    assert.equal(loaded?.bytes.toString(), 'remote-asset');
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreEnv('BLOG_SQLITE_PATH', originalBlogSqlitePath);
+    restoreEnv('GITHUB_PAT', originalGithubPat);
+    restoreEnv('GITHUB_TOKEN', originalGithubToken);
+  }
+});
 
 test('loadMainBlogPosts falls back to GitHub sqlite contents when no local sqlite file exists, even without a token', async () => {
   const sqliteFile = makeSqliteFile(`main-blog-db-test-${Date.now()}-${Math.random().toString(16).slice(2)}.sqlite`, {

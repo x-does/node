@@ -1,10 +1,10 @@
 'use client';
 
 import Link from 'next/link';
-import { marked } from 'marked';
 import initSqlJs from 'sql.js';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { isGitHubApiConflictError, isGitHubApiNotFoundError } from './github-api';
+import { buildAssetPath, buildMediaMarkdown, getEditorAccessState, renderBlogMediaMarkdown, toAssetSlug } from './media';
 import { describeDeleteAction, describePublishAction, getPostContentPath } from './post-management';
 import {
   type RepoConnectionSettings,
@@ -460,14 +460,10 @@ export default function BlogEditApp() {
 
   const deferredMarkdown = useDeferredValue(markdown);
 
-  const preview = useMemo(
-    () => ({
-      __html: marked.parse(preprocessMarkdownForPreview(deferredMarkdown), {
-        gfm: true,
-        breaks: true,
-      }) as string,
-    }),
-    [deferredMarkdown],
+  const activeDraftSlug = activeSlug || toAssetSlug(title) || 'draft-post';
+  const previewHtml = useMemo(
+    () => renderBlogMediaMarkdown(activeDraftSlug, preprocessMarkdownForPreview(deferredMarkdown)),
+    [activeDraftSlug, deferredMarkdown],
   );
 
   useEffect(() => {
@@ -673,13 +669,43 @@ export default function BlogEditApp() {
     });
   }
 
-  async function onPickImage(file: File) {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const src = String(reader.result || '');
-      insertAtCursor(`\n![${urlSafeText(file.name)}](${src})\n`);
-    };
-    reader.readAsDataURL(file);
+  async function onPickMedia(file: File) {
+    if (!token) {
+      notify('error', 'Connect GitHub before uploading media.', 'Media upload blocked.', 'Upload blocked');
+      return;
+    }
+    const slug = activeSlug || toAssetSlug(title);
+    if (!slug) {
+      notify('error', 'Add a title first so the asset folder can be created from the post slug.', 'Media upload blocked.', 'Upload blocked');
+      return;
+    }
+
+    setLoading(true);
+    const ownerRepo = `${settings.owner}/${settings.repo}`;
+    const assetPath = buildAssetPath(slug, file.name, settings.baseDir);
+    updateStatus(`Uploading ${file.name} to ${assetPath}...`);
+    try {
+      const buffer = new Uint8Array(await file.arrayBuffer());
+      const sha = await getFileSha(token, ownerRepo, assetPath, settings.branch).catch((error) => {
+        if (isGitHubApiNotFoundError(error)) return undefined;
+        throw error;
+      });
+      await putFile(
+        token,
+        ownerRepo,
+        assetPath,
+        settings.branch,
+        bytesToBase64(buffer),
+        `blog: upload asset ${slug}/${file.name}`,
+        sha,
+      );
+      insertAtCursor(buildMediaMarkdown({ slug, fileName: file.name, mimeType: file.type || 'application/octet-stream' }));
+      notify('success', `Uploaded ${file.name} to ${assetPath} and embedded it in the editor.`, `Uploaded media to ${assetPath}.`, 'Media uploaded');
+    } catch (e) {
+      notify('error', e instanceof Error ? e.message : 'media upload failed', 'Media upload failed.', 'Upload failed');
+    } finally {
+      setLoading(false);
+    }
   }
 
   function onInsertImageUrl() {
@@ -858,8 +884,13 @@ export default function BlogEditApp() {
       setLinks(post.links || parsed.links);
       setMarkdown(parsed.markdown);
       setActiveSlug(post.slug);
-      setTab('editor');
-      notify('success', `Loaded ${post.slug} into the editor.`, `Editing ${post.slug}.`);
+      if (token) {
+        setTab('editor');
+        notify('success', `Loaded ${post.slug} into the editor.`, `Editing ${post.slug}.`);
+      } else {
+        setTab('posts');
+        notify('info', `Loaded ${post.slug} for preview data, but editor controls stay locked until GitHub auth is connected.`, 'Connect GitHub to edit this post.', 'Editor locked');
+      }
     } catch (e) {
       notify('error', e instanceof Error ? e.message : 'failed to open post', 'Failed to open post.');
     } finally {
@@ -868,6 +899,7 @@ export default function BlogEditApp() {
   }
 
   function applySelectedRepo(full: string, shouldLoadPosts = false) {
+    if (loading) return;
     if (!full) return;
     const selected = repos.find((r) => r.full_name === full);
     const nextSettings = getSettingsForSelectedRepo(settings, full, selected);
@@ -889,6 +921,7 @@ export default function BlogEditApp() {
   }
 
   function applyRepoLocator() {
+    if (loading) return;
     const parsed = parseRepositoryInput(repoLocator);
     if (!parsed) {
       notify('error', 'Enter owner/repo or a full GitHub repo URL.', 'Repository locator is invalid.', 'Invalid repository locator');
@@ -908,9 +941,13 @@ export default function BlogEditApp() {
   }
 
   function startNewDraft() {
+    if (!token) {
+      notify('error', 'Connect GitHub before starting an editable draft.', 'GitHub auth is required before editing.', 'Editor locked');
+      return;
+    }
     resetEditorDraft();
     setTab('editor');
-    notify('info', 'Started a fresh draft in the editor.', 'Started a new draft.', 'New draft');
+    notify('info', 'Started a fresh draft in the editor.', 'Started a fresh draft.', 'Draft ready');
   }
 
   async function publish() {
@@ -1072,20 +1109,21 @@ export default function BlogEditApp() {
     selectedRepoIsListed,
   });
   const selectedPostMeta = posts.find((post) => post.slug === activeSlug);
+  const editorAccess = getEditorAccessState({ token, loading });
   const workspaceSwitcherTitle = hasLoadedRepos ? 'Switch workspace' : 'Choose workspace';
   const workspaceSwitcherDescription = hasLoadedRepos
-    ? 'Pick a writable repo card, or use the locator when the repo is not listed.'
-    : 'Use the primary action to load writable repos, or paste a repository locator to keep moving.';
+    ? 'Choose from writable repositories below, or paste a repository locator when needed.'
+    : 'Load writable repositories, or paste a repository locator to keep moving.';
   const hasSavedAuth = Boolean(token);
   const workspaceAccordionCards: WorkspaceAccordionCard[] = [
     {
       key: 'workspace',
       eyebrow: 'Workspace',
       title: publishTarget.ownerRepo,
-      summary: activeSlug ? `Current post: ${selectedPostMeta?.title || activeSlug}` : 'Current post: New draft',
+      summary: activeSlug ? `Editing target: ${selectedPostMeta?.title || activeSlug}` : 'No post selected',
       detail: hasSavedAuth
-        ? `${filteredRepos.length} repo option${filteredRepos.length === 1 ? '' : 's'} ready · Branch ${publishTarget.branchLabel} · Dir ${publishTarget.baseDirLabel} · SQLite ${publishTarget.sqliteLabel}`
-        : `Connect GitHub or use a repo locator. Branch ${publishTarget.branchLabel} · Dir ${publishTarget.baseDirLabel} · SQLite ${publishTarget.sqliteLabel}`,
+        ? `${filteredRepos.length} repo option${filteredRepos.length === 1 ? '' : 's'} ready.`
+        : 'Connect GitHub or use a repo locator.',
       isOpen: workspaceOpen,
       onToggle: () => setWorkspaceOpen((open) => !open),
     },
@@ -1099,8 +1137,24 @@ export default function BlogEditApp() {
             <h1 className="text-4xl font-black text-[#f3edff] sm:text-5xl">Post Editor</h1>
           </div>
           <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => setTab('editor')} className={btn(tab === 'editor')} aria-pressed={tab === 'editor'}>Editor</button>
-            <button type="button" onClick={() => setTab('posts')} className={btn(tab === 'posts')} aria-pressed={tab === 'posts'}>Posts</button>
+            <button
+              type="button"
+              onClick={() => {
+                if (!editorAccess.canOpenEditor) {
+                  notify('error', editorAccess.reason, 'GitHub auth is required before editing.', 'Editor locked');
+                  return;
+                }
+                setTab('editor');
+              }}
+              className={btn(tab === 'editor')}
+              aria-pressed={tab === 'editor'}
+              aria-disabled={!editorAccess.canOpenEditor}
+              disabled={!editorAccess.canOpenEditor}
+              title={!editorAccess.canOpenEditor ? editorAccess.reason : undefined}
+            >
+              Editor
+            </button>
+            <button type="button" onClick={() => setTab('posts')} className={btn(tab === 'posts')} aria-pressed={tab === 'posts'} disabled={loading}>Posts</button>
           </div>
         </div>
 
@@ -1127,37 +1181,17 @@ export default function BlogEditApp() {
                   <div className="mt-3 space-y-3 rounded-xl border border-[#7f6b9d]/20 bg-[#0d0a15]/65 p-3">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Next post file</div>
-                        <div className="mt-1 font-medium text-[#efe8ff]">{publishTarget.postPath}</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Repository</div>
+                        <div className="mt-1 font-medium text-[#efe8ff]">{publishTarget.ownerRepo}</div>
                       </div>
                       <div className="rounded-lg border border-[#7f6b9d]/15 bg-[#0d0a15]/70 px-3 py-2 text-right">
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Current post</div>
-                        <div className="mt-1 font-semibold text-[#efe8ff]">{activeSlug ? selectedPostMeta?.title || activeSlug : 'New draft'}</div>
-                        <div className="mt-1 text-[#aa9ac5]">{activeSlug ? `Slug: ${activeSlug}` : 'Publishing uses the title-derived slug above.'}</div>
+                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Status</div>
+                        <div className="mt-1 font-semibold text-[#efe8ff]">{loading ? 'Working…' : 'Ready'}</div>
                       </div>
                     </div>
-                    <div className="grid gap-2 md:grid-cols-3">
-                      <div>
-                        <div className="text-[#9c8db7]">Branch</div>
-                        <div className="font-medium text-[#efe8ff]">{publishTarget.branchLabel}</div>
-                      </div>
-                      <div>
-                        <div className="text-[#9c8db7]">Content directory</div>
-                        <div className="font-medium text-[#efe8ff]">{publishTarget.baseDirLabel}</div>
-                      </div>
-                      <div>
-                        <div className="text-[#9c8db7]">SQLite index</div>
-                        <div className="font-medium text-[#efe8ff]">{publishTarget.sqliteLabel}</div>
-                      </div>
-                    </div>
-                    <div className="text-xs text-[#8f80aa]">Latest activity: {statusText}</div>
+                    <div className="text-xs text-[#8f80aa]">{statusText}</div>
 
                     <div className="border-t border-[#7f6b9d]/15 pt-3">
-                      <div className="mb-3">
-                        <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Workspace settings</div>
-                        <div className="mt-1 text-[#aa9ac5]">{workspaceSwitcherDescription}</div>
-                      </div>
-
                       <div className="space-y-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
@@ -1205,6 +1239,7 @@ export default function BlogEditApp() {
                                     : 'border-[#7f6b9d]/25 bg-[#110d19]/45'
                                 }`}
                                 onClick={() => applySelectedRepo(r.full_name, true)}
+                                disabled={loading}
                               >
                                 <div className="flex flex-wrap items-center gap-2">
                                   <strong className="text-[#efe8ff]">{r.full_name}</strong>
@@ -1267,8 +1302,14 @@ export default function BlogEditApp() {
           ))}
         </div>
 
-        {tab === 'editor' && (
-          <div className="mt-6 grid gap-3">
+        {tab === 'editor' && !editorAccess.canOpenEditor ? (
+          <div className="mt-6 rounded-xl border border-amber-400/35 bg-amber-950/25 p-4 text-sm text-amber-100" role="status">
+            {editorAccess.reason}
+          </div>
+        ) : null}
+
+        {tab === 'editor' && editorAccess.canOpenEditor && (
+          <div className={`mt-6 grid gap-3 ${editorAccess.disabled ? 'pointer-events-none opacity-60' : ''}`} aria-busy={editorAccess.disabled}>
             <div className="rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-3 text-sm text-[#c7bbdc]">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -1292,27 +1333,27 @@ export default function BlogEditApp() {
                 <div className="text-[11px] uppercase tracking-[0.18em] text-[#8ea6e8]">Formatting toolbar</div>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2">
-                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n# Heading 1\n')}>H1</button>
-                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n## Heading 2\n')}>H2</button>
-                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n### Heading 3\n')}>H3</button>
-                <button type="button" className={miniBtn} onClick={() => wrapSelection('**', '**')}>Bold</button>
-                <button type="button" className={miniBtn} onClick={() => wrapSelection('_', '_')}>Italic</button>
-                <button type="button" className={miniBtn} onClick={() => wrapSelection('`', '`')}>Code</button>
-                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n> Quote\n')}>Quote</button>
-                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n- List item\n- List item\n')}>List</button>
-                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n- [ ] Task\n- [x] Done\n')}>Tasks</button>
-                <button type="button" className={miniBtn} onClick={() => imagePickerRef.current?.click()}>Image</button>
-                <button type="button" className={miniBtn} onClick={onInsertLink}>Link</button>
-                <button type="button" className={miniBtn} onClick={onInsertYouTube}>YouTube</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n# Heading 1\n')} disabled={editorAccess.disabled}>H1</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n## Heading 2\n')} disabled={editorAccess.disabled}>H2</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n### Heading 3\n')} disabled={editorAccess.disabled}>H3</button>
+                <button type="button" className={miniBtn} onClick={() => wrapSelection('**', '**')} disabled={editorAccess.disabled}>Bold</button>
+                <button type="button" className={miniBtn} onClick={() => wrapSelection('_', '_')} disabled={editorAccess.disabled}>Italic</button>
+                <button type="button" className={miniBtn} onClick={() => wrapSelection('`', '`')} disabled={editorAccess.disabled}>Code</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n> Quote\n')} disabled={editorAccess.disabled}>Quote</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n- List item\n- List item\n')} disabled={editorAccess.disabled}>List</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n- [ ] Task\n- [x] Done\n')} disabled={editorAccess.disabled}>Tasks</button>
+                <button type="button" className={miniBtn} onClick={() => imagePickerRef.current?.click()} disabled={editorAccess.disabled}>Upload media</button>
+                <button type="button" className={miniBtn} onClick={onInsertLink} disabled={editorAccess.disabled}>Link</button>
+                <button type="button" className={miniBtn} onClick={onInsertYouTube} disabled={editorAccess.disabled}>YouTube</button>
               </div>
               <div className="mt-2 flex flex-wrap items-center gap-2 text-[11px] text-[#aa9ac5]">
                 <span>More inserts:</span>
-                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n```ts\nconsole.log("code block")\n```\n')}>Code block</button>
-                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n1. First\n2. Second\n')}>Numbered list</button>
-                <button type="button" className={miniBtn} onClick={onInsertImageUrl}>Image URL</button>
-                <button type="button" className={miniBtn} onClick={onInsertRef}>@ref</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n```ts\nconsole.log("code block")\n```\n')} disabled={editorAccess.disabled}>Code block</button>
+                <button type="button" className={miniBtn} onClick={() => insertAtCursor('\n1. First\n2. Second\n')} disabled={editorAccess.disabled}>Numbered list</button>
+                <button type="button" className={miniBtn} onClick={onInsertImageUrl} disabled={editorAccess.disabled}>Image URL</button>
+                <button type="button" className={miniBtn} onClick={onInsertRef} disabled={editorAccess.disabled}>@ref</button>
               </div>
-              <input ref={imagePickerRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) onPickImage(f); e.currentTarget.value = ''; }} />
+              <input ref={imagePickerRef} type="file" accept="image/*,video/*,audio/*,application/pdf,text/plain,.md,.pdf" className="hidden" disabled={editorAccess.disabled} onChange={(e) => { const f = e.target.files?.[0]; if (f) void onPickMedia(f); e.currentTarget.value = ''; }} />
             </div>
 
             <div className="flex flex-wrap gap-2 text-sm">
@@ -1326,7 +1367,7 @@ export default function BlogEditApp() {
                 <textarea ref={editorRef} className={textarea} value={markdown} onChange={(e) => setMarkdown(e.target.value)} />
               ) : null}
               {showPreview ? (
-                <div className="preview rounded-lg border border-[#7f6b9d]/25 bg-[#0f0b17] p-3" dangerouslySetInnerHTML={preview} />
+                <div className="preview rounded-lg border border-[#7f6b9d]/25 bg-[#0f0b17] p-3" dangerouslySetInnerHTML={{ __html: previewHtml }} />
               ) : null}
             </div>
 
@@ -1349,7 +1390,7 @@ export default function BlogEditApp() {
                       <p className="mt-1 text-[#c7bbdc]">{p.description}</p>
                     </div>
                     <div className="flex flex-wrap gap-2 text-sm">
-                      <button type="button" className={btn(false)} onClick={() => void openPostInEditor(p)} disabled={loading}>Edit post</button>
+                      <button type="button" className={btn(false)} onClick={() => void openPostInEditor(p)} disabled={!token || loading} title={!token ? editorAccess.reason : undefined}>Edit post</button>
                       <Link href={`/blog/${encodeURIComponent(p.slug)}`} className="rounded-lg border border-[#7f6b9d]/25 bg-[#110d19]/35 px-3 py-2 text-[#cdbfe4] hover:text-white">
                         View live
                       </Link>
@@ -1416,7 +1457,7 @@ function btn(active: boolean) {
   return `rounded-lg border px-3 py-2 text-sm ${
     active
       ? 'border-[#a58ac8]/60 bg-[#241a36] text-white'
-      : 'border-[#7f6b9d]/30 bg-[#1a1328] text-[#efe8ff] hover:border-[#a58ac8]/50'
+      : 'border-[#7f6b9d]/30 bg-[#1a1328] text-[#efe8ff] hover:border-[#a58ac8]/50 disabled:cursor-not-allowed disabled:opacity-50'
   }`;
 }
 
@@ -1432,9 +1473,9 @@ function toastClassName(tone: ToastTone) {
 }
 
 
-const miniBtn = 'rounded border border-[#7f6b9d]/35 bg-[#1a1328] px-2 py-1 text-[#e9deff] hover:border-[#a58ac8]/60';
-const input = 'w-full rounded-lg border border-[#7f6b9d]/30 bg-[#130f1d] px-3 py-2 text-[#efe8ff] outline-none';
-const textarea = 'min-h-[420px] rounded-lg border border-[#7f6b9d]/30 bg-[#130f1d] p-3 text-[#efe8ff] outline-none';
+const miniBtn = 'rounded border border-[#7f6b9d]/35 bg-[#1a1328] px-2 py-1 text-[#e9deff] hover:border-[#a58ac8]/60 disabled:cursor-not-allowed disabled:opacity-50';
+const input = 'w-full rounded-lg border border-[#7f6b9d]/30 bg-[#130f1d] px-3 py-2 text-[#efe8ff] outline-none disabled:cursor-not-allowed disabled:opacity-50';
+const textarea = 'min-h-[420px] rounded-lg border border-[#7f6b9d]/30 bg-[#130f1d] p-3 text-[#efe8ff] outline-none disabled:cursor-not-allowed disabled:opacity-50';
 const label = 'grid gap-1 text-sm text-[#c8bcdd]';
 
 export { BlogEditApp };

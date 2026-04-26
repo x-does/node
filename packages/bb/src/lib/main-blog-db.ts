@@ -84,6 +84,29 @@ async function fetchGitHubContents(relativePath: string) {
   return (await res.json()) as { content?: string; encoding?: string; sha?: string };
 }
 
+export function contentTypeForPath(filePath: string) {
+  const ext = path.extname(filePath).toLowerCase();
+  const types: Record<string, string> = {
+    '.avif': 'image/avif',
+    '.gif': 'image/gif',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.svg': 'image/svg+xml',
+    '.webp': 'image/webp',
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.mov': 'video/quicktime',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
+    '.ogg': 'audio/ogg',
+    '.pdf': 'application/pdf',
+    '.txt': 'text/plain; charset=utf-8',
+    '.md': 'text/markdown; charset=utf-8',
+  };
+  return types[ext] || 'application/octet-stream';
+}
+
 async function fetchRemoteSqliteToTempFile() {
   const sqlitePath = configuredSqlitePath();
   const payload = await fetchGitHubContents(sqlitePath);
@@ -169,8 +192,42 @@ export async function loadMainBlogPostBySlug(slug: string): Promise<MainBlogRow 
   return posts.find((post) => post.slug === normalizedSlug) || null;
 }
 
+export function getMainBlogRelativePath(relativePath: string) {
+  return relativePath
+    .replace(/^\/+/, '')
+    .split('/')
+    .filter((part) => part && part !== '.' && part !== '..')
+    .join('/');
+}
+
+export async function loadMainBlogAsset(relativePath: string): Promise<{ bytes: Buffer; contentType: string } | null> {
+  const normalizedPath = getMainBlogRelativePath(relativePath);
+  const localCandidates = candidateLocalSqlitePaths()
+    .map((file) => path.resolve(path.dirname(file), normalizedPath));
+
+  for (const candidate of localCandidates) {
+    if (fs.existsSync(candidate)) {
+      return {
+        bytes: fs.readFileSync(candidate),
+        contentType: contentTypeForPath(normalizedPath),
+      };
+    }
+  }
+
+  const payload = await fetchGitHubContents(normalizedPath);
+  if (!payload) return null;
+  if (!payload.content || payload.encoding !== 'base64') {
+    throw new Error('GitHub blog asset response did not include base64 content.');
+  }
+
+  return {
+    bytes: Buffer.from(payload.content.replace(/\n/g, ''), 'base64'),
+    contentType: contentTypeForPath(normalizedPath),
+  };
+}
+
 export async function loadMainBlogMarkdown(row: Pick<MainBlogRow, 'folder' | 'filename'>): Promise<string | null> {
-  const relativePath = `${row.folder}/${row.filename}`.replace(/^\/+/, '');
+  const relativePath = getMainBlogRelativePath(`${row.folder}/${row.filename}`);
   const localCandidates = candidateLocalSqlitePaths()
     .map((file) => path.resolve(path.dirname(file), relativePath));
 

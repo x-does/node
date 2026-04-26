@@ -1,7 +1,7 @@
 import Link from 'next/link';
-import { marked } from 'marked';
 import { notFound } from 'next/navigation';
 
+import { renderBlogMediaMarkdown } from '../../blog-edit/media';
 import { loadMainBlogMarkdown, loadMainBlogPostBySlug } from '../../lib/main-blog-db';
 
 function splitCsv(input: string) {
@@ -21,7 +21,7 @@ export default async function BlogPostPage({ params }: { params: Params }) {
   const markdown = await loadMainBlogMarkdown(post);
   if (!markdown) notFound();
 
-  const html = marked.parse(markdown, { gfm: true, breaks: true }) as string;
+  const html = renderBlogMediaMarkdown(post.slug, markdown);
 
   return (
     <article className="py-10">
