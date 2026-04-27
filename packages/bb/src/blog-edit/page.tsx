@@ -1610,41 +1610,6 @@ export default function BlogEditApp() {
         )}
       </section>
 
-      <style>{`
-        .preview :global(h1), .preview :global(h2), .preview :global(h3) {
-          color: #f3edff;
-          font-weight: 800;
-          margin-top: 1rem;
-          margin-bottom: 0.5rem;
-        }
-        .preview :global(p), .preview :global(li), .preview :global(blockquote) {
-          color: #d5caea;
-          line-height: 1.65;
-        }
-        .preview :global(a) {
-          color: #c6a8ff;
-          text-decoration: underline;
-        }
-        .preview :global(pre) {
-          background: #09070f;
-          color: #efe8ff;
-          border: 1px solid rgba(127, 107, 157, 0.3);
-          border-radius: 10px;
-          padding: 0.75rem;
-          overflow-x: auto;
-        }
-        .preview :global(code) {
-          background: rgba(13, 10, 21, 0.9);
-          border-radius: 6px;
-          padding: 0.1rem 0.3rem;
-          border: 1px solid rgba(127, 107, 157, 0.2);
-        }
-        .preview :global(img), .preview :global(iframe) {
-          max-width: 100%;
-          border-radius: 10px;
-          border: 1px solid rgba(127, 107, 157, 0.25);
-        }
-      `}</style>
     </div>
   );
 }

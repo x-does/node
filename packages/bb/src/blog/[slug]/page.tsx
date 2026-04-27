@@ -24,13 +24,13 @@ export default async function BlogPostPage({ params }: { params: Params }) {
   const html = renderBlogMediaMarkdown(post.slug, markdown);
 
   return (
-    <article className="py-10">
-      <div>
+    <article className="mx-auto max-w-3xl py-10 lg:max-w-[780px]">
+      <div className="mx-auto max-w-[68ch]">
         <h1 className="font-display text-4xl font-bold text-[#f3edff] sm:text-5xl">{post.title}</h1>
-        <p className="mt-3 max-w-3xl text-[#c6badb]">{post.description || 'No description.'}</p>
+        <p className="mt-3 text-[#c6badb]">{post.description || 'No description.'}</p>
       </div>
 
-      <div className="mt-4 flex flex-wrap gap-2 text-xs">
+      <div className="mx-auto mt-4 flex max-w-[68ch] flex-wrap gap-2 text-xs">
         {splitCsv(post.tags).map((tag) => (
           <span key={`tag-${post.slug}-${tag}`} className="rounded-full border border-[#7f6b9d]/35 px-2 py-1 text-[#c7bbdc]">
             #{tag}
@@ -47,14 +47,14 @@ export default async function BlogPostPage({ params }: { params: Params }) {
         ))}
       </div>
 
-      <div className="mt-4 text-sm text-[#ad9fc5]">
+      <div className="mx-auto mt-4 max-w-[68ch] text-sm text-[#ad9fc5]">
         <div>updated: {post.updatedAt}</div>
         <div>
           source file: <code>{post.folder}/{post.filename}</code>
         </div>
       </div>
 
-      <div className="preview mt-8 rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-6" dangerouslySetInnerHTML={{ __html: html }} />
+      <div className="preview blog-post-preview mx-auto mt-8 max-w-[68ch] rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-4 sm:p-6" dangerouslySetInnerHTML={{ __html: html }} />
     </article>
   );
 }

@@ -153,9 +153,19 @@ function rewriteMediaSources(slug: string, html: string) {
   });
 }
 
+function wrapResponsiveEmbeds(html: string) {
+  return html.replace(/<iframe\b([^>]*)><\/iframe>/gi, (match, attrs) => {
+    const normalizedAttrs = String(attrs);
+    if (/blog-media-embed/i.test(normalizedAttrs)) return match;
+    const isYouTube = /src=["']https?:\/\/(?:www\.)?(?:youtube\.com\/embed\/|youtube-nocookie\.com\/embed\/)/i.test(normalizedAttrs);
+    const embedClass = isYouTube ? 'blog-media-embed blog-media-embed--youtube' : 'blog-media-embed';
+    return `<div class="${embedClass}"><iframe${normalizedAttrs}></iframe></div>`;
+  });
+}
+
 export function renderBlogMediaMarkdown(slug: string, markdown: string) {
   const html = marked.parse(markdown, { gfm: true, breaks: true }) as string;
-  return addDownloadToAssetLinks(slug, rewriteMediaSources(slug, html));
+  return wrapResponsiveEmbeds(addDownloadToAssetLinks(slug, rewriteMediaSources(slug, html)));
 }
 
 export function getEditorAccessState({ token, loading }: { token: string; loading: boolean }): EditorAccessState {

@@ -45,6 +45,16 @@ test('renderBlogMediaMarkdown rewrites post-relative asset links for reader page
   assert.match(html, /<a href="\/api\/main-blog\/assets\/hello-world\/spec\.pdf" download>Spec<\/a>/);
 });
 
+test('renderBlogMediaMarkdown wraps YouTube iframes for responsive sizing', () => {
+  const html = renderBlogMediaMarkdown(
+    'hello-world',
+    '<iframe width="560" height="315" src="https://www.youtube.com/embed/demo" title="YouTube video" frameborder="0" allowfullscreen></iframe>',
+  );
+
+  assert.match(html, /<div class="blog-media-embed blog-media-embed--youtube">/);
+  assert.match(html, /<iframe[^>]+src="https:\/\/www\.youtube\.com\/embed\/demo"/);
+});
+
 test('normalizeGitHubAssetEntries returns sorted post-relative files only', () => {
   assert.deepEqual(
     normalizeGitHubAssetEntries(
