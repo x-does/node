@@ -138,12 +138,20 @@ export function resolveBlogAssetUrl(slug: string, assetUrl: string) {
     .join('/')}`;
 }
 
+function addClassToAttrs(attrs: string, className: string) {
+  if (/\bclass="[^"]*"/i.test(attrs)) {
+    return attrs.replace(/\bclass="([^"]*)"/i, (_match, existing) => `class="${className} ${existing}"`);
+  }
+  return `class="${className}" ${attrs}`.trim();
+}
+
 function addDownloadToAssetLinks(slug: string, html: string) {
-  return html.replace(/<a\s+([^>]*href="([^"]+)"[^>]*)>/gi, (match, attrs, href) => {
+  return html.replace(/<a\s+([^>]*href="([^"]+)"[^>]*)>([\s\S]*?)<\/a>/gi, (match, attrs, href, label) => {
     const resolved = resolveBlogAssetUrl(slug, href);
     if (resolved === href || !href.replace(/^\.\//, '').startsWith('assets/')) return match;
-    const withoutHref = String(attrs).replace(/href="[^"]+"/i, `href="${resolved}"`);
-    return `<a ${withoutHref} download>`;
+    const withHref = String(attrs).replace(/href="[^"]+"/i, `href="${resolved}"`);
+    const withClass = addClassToAttrs(withHref, 'blog-download-link');
+    return `<a ${withClass} download><span class="blog-download-link__icon" aria-hidden="true">⬇</span><span class="blog-download-link__label">${label}</span></a>`;
   });
 }
 
@@ -163,9 +171,37 @@ function wrapResponsiveEmbeds(html: string) {
   });
 }
 
+function htmlAttributeEscape(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\n/g, '&#10;')
+    .replace(/\r/g, '&#13;');
+}
+
+function htmlTextDecode(value: string) {
+  return value
+    .replace(/<[^>]+>/g, '')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&');
+}
+
+function addCodeCopyControls(html: string) {
+  return html.replace(/<pre><code([^>]*)>([\s\S]*?)<\/code><\/pre>/gi, (_match, attrs, codeHtml) => {
+    const code = htmlTextDecode(String(codeHtml));
+    return `<div class="blog-code-block"><button type="button" class="blog-code-copy" aria-label="Copy code block" data-copy-code="${htmlAttributeEscape(code)}"><span aria-hidden="true">⧉</span><span class="blog-code-copy__text">Copy</span></button><pre><code${attrs}>${codeHtml}</code></pre></div>`;
+  });
+}
+
 export function renderBlogMediaMarkdown(slug: string, markdown: string) {
   const html = marked.parse(markdown, { gfm: true, breaks: true }) as string;
-  return wrapResponsiveEmbeds(addDownloadToAssetLinks(slug, rewriteMediaSources(slug, html)));
+  return addCodeCopyControls(wrapResponsiveEmbeds(addDownloadToAssetLinks(slug, rewriteMediaSources(slug, html))));
 }
 
 export function getEditorAccessState({ token, loading }: { token: string; loading: boolean }): EditorAccessState {

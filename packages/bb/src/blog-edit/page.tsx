@@ -4,6 +4,7 @@ import Link from 'next/link';
 import initSqlJs from 'sql.js';
 import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import { isGitHubApiConflictError, isGitHubApiNotFoundError } from './github-api';
+import { BlogCodeCopyController } from './code-copy';
 import {
   type BlogAsset,
   buildAssetPath,
@@ -1247,6 +1248,7 @@ export default function BlogEditApp() {
 
   return (
     <div className={fullscreen ? 'fixed inset-0 z-50 overflow-auto bg-[#07060c] p-6' : ''}>
+      <BlogCodeCopyController />
       <section className="py-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

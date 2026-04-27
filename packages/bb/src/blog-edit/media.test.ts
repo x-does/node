@@ -42,7 +42,8 @@ test('renderBlogMediaMarkdown rewrites post-relative asset links for reader page
   assert.match(html, /src="\/api\/main-blog\/assets\/hello-world\/hero\.png"/);
   assert.match(html, /src="\/api\/main-blog\/assets\/hello-world\/clip\.mp4"/);
   assert.match(html, /href="\/api\/main-blog\/assets\/hello-world\/spec\.pdf"/);
-  assert.match(html, /<a href="\/api\/main-blog\/assets\/hello-world\/spec\.pdf" download>Spec<\/a>/);
+  assert.match(html, /<a class="blog-download-link" href="\/api\/main-blog\/assets\/hello-world\/spec\.pdf" download>/);
+  assert.match(html, /<span class="blog-download-link__label">Spec<\/span>/);
 });
 
 test('renderBlogMediaMarkdown wraps YouTube iframes for responsive sizing', () => {
@@ -53,6 +54,24 @@ test('renderBlogMediaMarkdown wraps YouTube iframes for responsive sizing', () =
 
   assert.match(html, /<div class="blog-media-embed blog-media-embed--youtube">/);
   assert.match(html, /<iframe[^>]+src="https:\/\/www\.youtube\.com\/embed\/demo"/);
+});
+
+test('renderBlogMediaMarkdown adds copy controls to fenced code blocks', () => {
+  const html = renderBlogMediaMarkdown('hello-world', '```js\nconsole.log("copy me")\n```');
+
+  assert.match(html, /<div class="blog-code-block"/);
+  assert.match(html, /<button type="button" class="blog-code-copy"/);
+  assert.match(html, /aria-label="Copy code block"/);
+  assert.match(html, /data-copy-code="console\.log\(&quot;copy me&quot;\)&#10;"/);
+  assert.match(html, /<span aria-hidden="true">⧉<\/span>/);
+});
+
+test('renderBlogMediaMarkdown marks downloadable asset links with a visible affordance', () => {
+  const html = renderBlogMediaMarkdown('hello-world', '[Spec sheet](assets/spec.pdf)');
+
+  assert.match(html, /<a class="blog-download-link" href="\/api\/main-blog\/assets\/hello-world\/spec\.pdf" download>/);
+  assert.match(html, /<span class="blog-download-link__icon" aria-hidden="true">⬇<\/span>/);
+  assert.match(html, /<span class="blog-download-link__label">Spec sheet<\/span>/);
 });
 
 test('normalizeGitHubAssetEntries returns sorted post-relative files only', () => {
