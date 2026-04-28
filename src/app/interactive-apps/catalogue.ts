@@ -15,33 +15,4 @@ export const catalogueItems: CatalogueItem[] = [
     status: 'live',
     tags: ['blog', 'publishing', 'editor', 'github', 'sqlite'],
   },
-  {
-    title: 'Blog',
-    href: '/blog',
-    description: 'Read the public XDOES posts and experiments published from the editor workflow.',
-    status: 'live',
-    tags: ['writing', 'posts', 'publishing'],
-  },
-  {
-    title: 'XD License',
-    href: '/xd-license',
-    description: 'Reference terms for using, remixing, and sharing XDOES work with attribution.',
-    status: 'reference',
-    tags: ['license', 'terms', 'reference'],
-  },
-  {
-    title: 'Sponsors',
-    href: '/sponsors',
-    description: 'Sponsor and partner information for placements around XDOES projects.',
-    status: 'reference',
-    tags: ['sponsors', 'partners', 'contact'],
-  },
-  {
-    title: 'YouTube',
-    href: 'https://youtube.com/@x-does',
-    description: 'XDOES videos, demos, and public project updates on the main channel.',
-    status: 'external',
-    tags: ['video', 'channel', 'youtube'],
-    external: true,
-  },
 ];

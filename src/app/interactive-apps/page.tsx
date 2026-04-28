@@ -13,8 +13,7 @@ export default function MainInteractiveAppsPage() {
       <div className="max-w-3xl">
         <h1 className="font-display text-5xl font-bold text-[#f3edff] sm:text-6xl">Interactive</h1>
         <p className="mt-4 text-base leading-7 text-[#b9accf]">
-          Searchable catalogue for XDOES webapps, editors, references, and experiments. Start here when you want the
-          blog editor or any other small tool without cluttering the main page.
+          Minimal launcher for the XDOES blog editor. More tools can live here later, but for now this page stays focused.
         </p>
       </div>
 
