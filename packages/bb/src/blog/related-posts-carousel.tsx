@@ -23,7 +23,7 @@ function formatDisplayDate(date: string) {
 }
 
 export function RelatedPostsCarousel({ posts }: { posts: RelatedPost[] }) {
-  const items = useMemo(() => posts.filter((post) => post.sharedTags.length > 0), [posts]);
+  const items = useMemo(() => posts, [posts]);
   const [activeIndex, setActiveIndex] = useState(0);
 
   useEffect(() => {
@@ -50,7 +50,7 @@ export function RelatedPostsCarousel({ posts }: { posts: RelatedPost[] }) {
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[#9f8bca]">Keep reading</p>
           <h2 className="mt-2 text-2xl font-semibold text-[#f3edff]">Related posts</h2>
-          <p className="mt-2 text-sm text-[#c6badb]">More posts that share at least one tag with this article.</p>
+          <p className="mt-2 text-sm text-[#c6badb]">A mix of tag matches and recent posts so readers always have somewhere to go next.</p>
         </div>
 
         {items.length > 1 ? (

@@ -14,12 +14,21 @@ function splitCsv(input: string) {
     .filter(Boolean);
 }
 
-function getRelatedPosts(post: MainBlogRow, allPosts: MainBlogRow[]) {
-  const currentTags = new Set(splitCsv(post.tags).map((tag) => tag.toLowerCase()));
-  if (currentTags.size === 0) return [];
+type RelatedPost = {
+  slug: string;
+  title: string;
+  description: string;
+  updatedAt: string;
+  sharedTags: string[];
+};
 
-  return allPosts
-    .filter((candidate) => candidate.slug !== post.slug)
+function getRelatedPosts(post: MainBlogRow, allPosts: MainBlogRow[]) {
+  const maxPosts = 8;
+  const candidates = allPosts.filter((candidate) => candidate.slug !== post.slug);
+  const currentTags = new Set(splitCsv(post.tags).map((tag) => tag.toLowerCase()));
+  const preferredTagCount = Math.ceil(maxPosts / 2);
+
+  const sameTagPosts = candidates
     .map((candidate) => {
       const sharedTags = splitCsv(candidate.tags).filter((tag) => currentTags.has(tag.toLowerCase()));
       return {
@@ -35,9 +44,35 @@ function getRelatedPosts(post: MainBlogRow, allPosts: MainBlogRow[]) {
     .sort((left, right) => {
       if (right.score !== left.score) return right.score - left.score;
       return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
-    })
-    .slice(0, 8)
-    .map(({ score: _score, ...candidate }) => candidate);
+    });
+
+  const selected = new Map<string, RelatedPost>();
+
+  for (const candidate of sameTagPosts.slice(0, preferredTagCount)) {
+    selected.set(candidate.slug, {
+      slug: candidate.slug,
+      title: candidate.title,
+      description: candidate.description,
+      updatedAt: candidate.updatedAt,
+      sharedTags: candidate.sharedTags,
+    });
+  }
+
+  for (const candidate of candidates.sort((left, right) => Date.parse(right.updatedAt) - Date.parse(left.updatedAt))) {
+    if (selected.size >= maxPosts) break;
+    if (selected.has(candidate.slug)) continue;
+
+    const sharedTags = splitCsv(candidate.tags).filter((tag) => currentTags.has(tag.toLowerCase()));
+    selected.set(candidate.slug, {
+      slug: candidate.slug,
+      title: candidate.title,
+      description: candidate.description,
+      updatedAt: candidate.updatedAt,
+      sharedTags,
+    });
+  }
+
+  return [...selected.values()].slice(0, maxPosts);
 }
 
 type Params = Promise<{ slug: string }>;
