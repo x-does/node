@@ -3,13 +3,41 @@ import { notFound } from 'next/navigation';
 
 import { BlogCodeCopyController } from '../../blog-edit/code-copy';
 import { renderBlogMediaMarkdown } from '../../blog-edit/media';
-import { loadMainBlogMarkdown, loadMainBlogPostBySlug } from '../../lib/main-blog-db';
+import { loadMainBlogMarkdown, loadMainBlogPostBySlug, loadMainBlogPosts } from '../../lib/main-blog-db';
+import type { MainBlogRow } from '../../lib/types';
+import { RelatedPostsCarousel } from '../related-posts-carousel';
 
 function splitCsv(input: string) {
   return input
     .split(',')
     .map((s) => s.trim())
     .filter(Boolean);
+}
+
+function getRelatedPosts(post: MainBlogRow, allPosts: MainBlogRow[]) {
+  const currentTags = new Set(splitCsv(post.tags).map((tag) => tag.toLowerCase()));
+  if (currentTags.size === 0) return [];
+
+  return allPosts
+    .filter((candidate) => candidate.slug !== post.slug)
+    .map((candidate) => {
+      const sharedTags = splitCsv(candidate.tags).filter((tag) => currentTags.has(tag.toLowerCase()));
+      return {
+        slug: candidate.slug,
+        title: candidate.title,
+        description: candidate.description,
+        updatedAt: candidate.updatedAt,
+        sharedTags,
+        score: sharedTags.length,
+      };
+    })
+    .filter((candidate) => candidate.score > 0)
+    .sort((left, right) => {
+      if (right.score !== left.score) return right.score - left.score;
+      return Date.parse(right.updatedAt) - Date.parse(left.updatedAt);
+    })
+    .slice(0, 8)
+    .map(({ score: _score, ...candidate }) => candidate);
 }
 
 type Params = Promise<{ slug: string }>;
@@ -23,6 +51,8 @@ export default async function BlogPostPage({ params }: { params: Params }) {
   if (!markdown) notFound();
 
   const html = renderBlogMediaMarkdown(post.slug, markdown);
+  const allPosts = await loadMainBlogPosts(undefined, 200);
+  const relatedPosts = getRelatedPosts(post, allPosts);
 
   return (
     <article className="mx-auto max-w-[860px] py-10">
@@ -57,6 +87,8 @@ export default async function BlogPostPage({ params }: { params: Params }) {
           source file: <code>{post.folder}/{post.filename}</code>
         </div>
       </div>
+
+      <RelatedPostsCarousel posts={relatedPosts} />
     </article>
   );
 }
