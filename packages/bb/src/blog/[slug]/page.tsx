@@ -49,14 +49,14 @@ export default async function BlogPostPage({ params }: { params: Params }) {
         ))}
       </div>
 
-      <div className="mx-auto mt-4 max-w-[66ch] text-sm text-[#ad9fc5]">
+      <div className="preview blog-post-preview mx-auto mt-8 max-w-[66ch] rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.2)] sm:p-6" dangerouslySetInnerHTML={{ __html: html }} />
+
+      <div className="mx-auto mt-5 max-w-[66ch] border-t border-[#7f6b9d]/18 pt-4 text-sm text-[#ad9fc5]">
         <div>updated: {post.updatedAt}</div>
         <div>
           source file: <code>{post.folder}/{post.filename}</code>
         </div>
       </div>
-
-      <div className="preview blog-post-preview mx-auto mt-8 max-w-[66ch] rounded-xl border border-[#7f6b9d]/25 bg-[#110d19]/45 p-4 shadow-[0_22px_70px_rgba(0,0,0,0.2)] sm:p-6" dangerouslySetInnerHTML={{ __html: html }} />
     </article>
   );
 }
