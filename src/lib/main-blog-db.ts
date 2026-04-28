@@ -25,6 +25,12 @@ function configuredBranch() {
   return process.env.BLOG_GITHUB_BRANCH || 'main';
 }
 
+function configuredRawBaseUrl() {
+  const repo = configuredGitHubRepo();
+  const branch = configuredBranch();
+  return `https://raw.githubusercontent.com/${repo}/${encodeURIComponent(branch)}`;
+}
+
 function configuredSqlitePath() {
   return process.env.BLOG_SQLITE_REPO_PATH || 'blog.sqlite';
 }
@@ -225,14 +231,32 @@ export async function loadMainBlogAsset(relativePath: string): Promise<{ bytes: 
     }
   }
 
-  const payload = await fetchGitHubContents(normalizedPath);
-  if (!payload) return null;
-  if (!payload.content || payload.encoding !== 'base64') {
-    throw new Error('GitHub blog asset response did not include base64 content.');
+  try {
+    const payload = await fetchGitHubContents(normalizedPath);
+    if (payload) {
+      if (!payload.content || payload.encoding !== 'base64') {
+        throw new Error('GitHub blog asset response did not include base64 content.');
+      }
+
+      return {
+        bytes: Buffer.from(payload.content.replace(/\n/g, ''), 'base64'),
+        contentType: contentTypeForPath(normalizedPath),
+      };
+    }
+  } catch (error) {
+    console.warn('[main-blog-db] GitHub contents asset fetch failed; trying raw fallback', normalizedPath, error);
+  }
+
+  const rawUrl = `${configuredRawBaseUrl()}/${normalizedPath}`;
+  const res = await fetch(rawUrl, { cache: 'no-store' });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Raw GitHub asset fetch failed for ${normalizedPath} (${res.status}): ${text.slice(0, 200)}`);
   }
 
   return {
-    bytes: Buffer.from(payload.content.replace(/\n/g, ''), 'base64'),
+    bytes: Buffer.from(await res.arrayBuffer()),
     contentType: contentTypeForPath(normalizedPath),
   };
 }
@@ -248,11 +272,25 @@ export async function loadMainBlogMarkdown(row: Pick<MainBlogRow, 'folder' | 'fi
     }
   }
 
-  const payload = await fetchGitHubContents(relativePath);
-  if (!payload) return null;
-  if (!payload.content || payload.encoding !== 'base64') {
-    throw new Error('GitHub blog markdown response did not include base64 content.');
+  try {
+    const payload = await fetchGitHubContents(relativePath);
+    if (payload) {
+      if (!payload.content || payload.encoding !== 'base64') {
+        throw new Error('GitHub blog markdown response did not include base64 content.');
+      }
+      return Buffer.from(payload.content.replace(/\n/g, ''), 'base64').toString('utf8');
+    }
+  } catch (error) {
+    console.warn('[main-blog-db] GitHub contents markdown fetch failed; trying raw fallback', relativePath, error);
   }
 
-  return Buffer.from(payload.content.replace(/\n/g, ''), 'base64').toString('utf8');
+  const rawUrl = `${configuredRawBaseUrl()}/${relativePath}`;
+  const res = await fetch(rawUrl, { cache: 'no-store' });
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Raw GitHub markdown fetch failed for ${relativePath} (${res.status}): ${text.slice(0, 200)}`);
+  }
+
+  return await res.text();
 }
