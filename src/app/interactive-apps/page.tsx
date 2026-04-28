@@ -3,7 +3,7 @@ import { InteractiveCatalogue } from './interactive-catalogue';
 
 export const metadata = {
   title: 'Interactive',
-  description: 'Searchable catalogue for XDOES webapps, editors, references, and experiments.',
+  description: 'Minimal launcher for the XDOES blog editor.',
 };
 
 export default function MainInteractiveAppsPage() {
