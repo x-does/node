@@ -9,10 +9,9 @@ type MenuItem = {
 
 export const MENU: MenuItem[] = [
   { label: 'Home', href: '/' },
-  { label: 'Interactive/apps', disabled: true },
+  { label: 'Interactive/apps', href: '/interactive-apps' },
   { label: 'Youtube', href: 'https://youtube.com/@x-does', external: true },
   { label: 'Blog', href: '/blog' },
-  { label: 'Blog editor', disabled: true },
   { label: 'XD License', disabled: true },
   { label: 'Sponsors', disabled: true },
 ];

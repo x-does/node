@@ -1,12 +1,24 @@
+import { catalogueItems } from './catalogue';
+import { InteractiveCatalogue } from './interactive-catalogue';
+
 export const metadata = {
-  title: 'Interactive/apps',
+  title: 'Interactive',
+  description: 'Searchable catalogue for XDOES webapps, editors, references, and experiments.',
 };
 
 export default function MainInteractiveAppsPage() {
   return (
     <section className="py-10">
-      <h1 className="font-display text-5xl font-bold text-[#f3edff]">Interactive/apps</h1>
-      <p className="mt-4 max-w-2xl text-[#b9accf]">Coming soon. This section is now served directly from the root and built in the new style only.</p>
+      <p className="mb-4 text-xs uppercase tracking-[0.3em] text-[#b4a6cc]">xdoes tools</p>
+      <div className="max-w-3xl">
+        <h1 className="font-display text-5xl font-bold text-[#f3edff] sm:text-6xl">Interactive</h1>
+        <p className="mt-4 text-base leading-7 text-[#b9accf]">
+          Searchable catalogue for XDOES webapps, editors, references, and experiments. Start here when you want the
+          blog editor or any other small tool without cluttering the main page.
+        </p>
+      </div>
+
+      <InteractiveCatalogue items={catalogueItems} />
     </section>
   );
 }
