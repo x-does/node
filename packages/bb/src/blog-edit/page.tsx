@@ -1251,7 +1251,14 @@ export default function BlogEditApp() {
       <BlogCodeCopyController />
       <section className="py-8">
         <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/interactive-apps"
+              className="rounded-full border border-[#7f6b9d]/25 px-3 py-1.5 text-sm text-[#c8bcdd] hover:border-[#c6a8ff]/45 hover:text-white"
+              title="Back to XDOES interactive apps"
+            >
+              ← Apps
+            </Link>
             <h1 className="text-4xl font-black text-[#f3edff] sm:text-5xl">Post Editor</h1>
           </div>
           <div className="flex flex-wrap gap-2">

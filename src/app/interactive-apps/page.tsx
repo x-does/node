@@ -3,7 +3,7 @@ import { InteractiveCatalogue } from './interactive-catalogue';
 
 export const metadata = {
   title: 'Interactive',
-  description: 'XDOES blog editor launcher.',
+  description: 'XDOES interactive tools launcher.',
 };
 
 export default function MainInteractiveAppsPage() {

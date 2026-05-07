@@ -15,4 +15,12 @@ export const catalogueItems: CatalogueItem[] = [
     status: 'live',
     tags: ['blog', 'publishing', 'editor', 'github', 'sqlite'],
   },
+  {
+    title: 'Vid Aider',
+    href: 'https://x-does.github.io/vid-aider/',
+    description: 'Browser studio for loading 3D assets, controlling groups, spinning loops, and exporting video-friendly captures.',
+    status: 'external',
+    tags: ['video', '3d', 'stl', 'obj', 'gltf', 'webm'],
+    external: true,
+  },
 ];
