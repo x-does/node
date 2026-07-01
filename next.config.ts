@@ -11,6 +11,7 @@ const noCacheHeaders = [
 
 const nextConfig: NextConfig = {
   reactStrictMode: true,
+  output: 'standalone',
   poweredByHeader: false,
   async headers() {
     return [
