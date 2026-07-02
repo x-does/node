@@ -23,12 +23,4 @@ export const catalogueItems: CatalogueItem[] = [
     tags: ['video', '3d', 'stl', 'obj', 'gltf', 'webm'],
     external: true,
   },
-  {
-    title: 'DefinitelyNotPong',
-    href: 'https://github.com/x-does/DNP',
-    description: 'Authoritative Node.js multiplayer Pong with WebSocket rooms, random 1v1 matchmaking, single-player AI, and up to 12 players.',
-    status: 'external',
-    tags: ['game', 'pong', 'multiplayer', 'websocket', 'node', 'canvas'],
-    external: true,
-  },
 ];
