@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "prisma generate && next build",
+    "build": "prisma generate && next build && node scripts/prepare-hostinger-runtime.mjs",
     "start": "next start",
+    "test": "node --test tests/dnp-integration.test.mjs",
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
@@ -23,14 +24,18 @@
     "@workos-inc/node": "^8.10.0",
     "better-sqlite3": "^11.10.0",
     "clsx": "^2.1.1",
+    "dotenv": "^16.6.1",
+    "express": "^5.2.1",
     "gray-matter": "^4.0.3",
     "marked": "^15.0.12",
+    "nanoid": "^5.1.16",
     "next": "^16.2.1",
     "next-mdx-remote": "^6.0.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "sql.js": "^1.14.1",
-    "tailwind-merge": "^3.5.0"
+    "tailwind-merge": "^3.5.0",
+    "ws": "^8.21.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.2.2",

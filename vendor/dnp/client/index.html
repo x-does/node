@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DefinitelyNotPong</title>
+    <link rel="stylesheet" href="./css/style.css" />
+  </head>
+  <body data-page="home">
+    <main class="shell home-shell">
+      <section class="hero card">
+        <p class="eyebrow">Browser party pong</p>
+        <h1>DefinitelyNotPong</h1>
+        <p class="lede">Six paddles, two teams, one chaotic arena. Play solo, match randomly, or invite friends with a room code.</p>
+      </section>
+
+      <section class="card panel" aria-labelledby="play-title">
+        <h2 id="play-title">Play</h2>
+        <form id="home-form" novalidate>
+          <label class="field">
+            <span>Display name</span>
+            <input id="display-name" name="displayName" maxlength="16" autocomplete="nickname" placeholder="Your name" required />
+          </label>
+
+          <div class="button-grid">
+            <button type="button" class="primary" data-action="single">Single Player</button>
+            <button type="button" data-action="random">Random 1v1</button>
+            <button type="button" data-action="create">Create Room</button>
+          </div>
+
+          <div class="join-row">
+            <label class="field room-field">
+              <span>Room code</span>
+              <input id="room-code" name="roomCode" maxlength="6" autocomplete="off" inputmode="text" placeholder="ABC123" />
+            </label>
+            <button type="button" data-action="join">Join Room</button>
+          </div>
+
+          <p id="home-message" class="message" role="status" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+
+    <script src="./config.js"></script>
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>
