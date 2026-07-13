@@ -60,6 +60,12 @@ test('rejects a late response belonging to a previous room session', () => {
   assert.equal(shouldAcceptDnpResponse('XYZ789', 0, 0, room(), 99), false);
 });
 
+test('rejects pre-realtime HTTP responses after the transport epoch changes regardless of version', () => {
+  const newer = { ...room(), version: 999 };
+  assert.equal(shouldAcceptDnpResponse('ABC234', 4, 8, newer, 99, 2, 1), false);
+  assert.equal(shouldAcceptDnpResponse('ABC234', 4, 8, newer, 99, 2, 2), true);
+});
+
 test('failed input delivery retries the same position and sequence until acknowledged', () => {
   const initial = { acknowledgedPosition: 0.5, sequence: 4, pending: null };
   const queued = queueDnpInput(initial, 0.8);

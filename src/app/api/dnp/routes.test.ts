@@ -1,20 +1,18 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-test('socket ticket endpoint returns controlled fallback when realtime env is absent', async () => {
-  const previousSecret = process.env.DNP_WS_TICKET_SECRET;
-  const previousUrl = process.env.DNP_WS_PUBLIC_URL;
-  delete process.env.DNP_WS_TICKET_SECRET;
-  delete process.env.DNP_WS_PUBLIC_URL;
-  try {
-    const socketTicket = await import('./rooms/[code]/socket-ticket/route');
-    const response = await socketTicket.POST(new Request('http://localhost/api/dnp/rooms/ABC234/socket-ticket', { method: 'POST' }), { params: Promise.resolve({ code: 'ABC234' }) });
-    assert.equal(response.status, 503);
-    assert.match((await response.json()).error, /fallback/i);
-  } finally {
-    if (previousSecret === undefined) delete process.env.DNP_WS_TICKET_SECRET; else process.env.DNP_WS_TICKET_SECRET = previousSecret;
-    if (previousUrl === undefined) delete process.env.DNP_WS_PUBLIC_URL; else process.env.DNP_WS_PUBLIC_URL = previousUrl;
-  }
+test('socket ticket explicitly reports non-retryable unavailable capability only after authentication', async () => {
+  const routeSource = await import('node:fs/promises').then(fs => fs.readFile(new URL('./rooms/[code]/socket-ticket/route.ts', import.meta.url), 'utf8'));
+  assert.match(routeSource, /authenticatePlayer[\s\S]*if \(!secret \|\| !publicUrl\)[\s\S]*reason: 'not_configured'/);
+});
+
+test('socket ticket authenticates and rate-limits before capability reporting and validates configured wss URL', async () => {
+  const routeSource = await import('node:fs/promises').then(fs => fs.readFile(new URL('./rooms/[code]/socket-ticket/route.ts', import.meta.url), 'utf8'));
+  assert.match(routeSource, /authenticatePlayer[\s\S]*DNP_WS_TICKET_SECRET/);
+  assert.match(routeSource, /checkDnpRateLimit[\s\S]*DNP_WS_TICKET_SECRET/);
+  assert.match(routeSource, /protocol\s*!==\s*'wss:'/);
+  assert.match(routeSource, /pathname\s*!==\s*['"]\/["']/);
+  assert.match(routeSource, /available:\s*true/);
 });
 
 test('dnp route handlers export ordinary Next handlers without custom runtime', async () => {

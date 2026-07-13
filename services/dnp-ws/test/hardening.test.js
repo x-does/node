@@ -134,6 +134,39 @@ test('safe refresh checkpoints dirty state, revokes removed sockets and broadcas
   hub.stop();
 });
 
+test('refresh revoking the last client schedules idle checkpoint, stop, and registry removal', async () => {
+  const fresh=baseRoom(); fresh.players[0].leftAt=new Date();
+  let checkpoints=0;
+  const adapter={loadRoom:async()=>baseRoom(),refresh:async()=>structuredClone(fresh),checkpoint:async(_state,expected)=>{checkpoints++;return {version:expected+1,playerSeqs:{}};}};
+  const registry=createHubRegistry({adapter,idleMs:15,hubOptions:{autoStart:false}});
+  const hub=await registry.get('ABC234');
+  const ws=new FakeWs(); hub.add(ws,{playerId:'p1'});
+  await hub.syncExternal();
+  assert.equal(hub.clients.size,0); assert.equal(ws.closed[0][0],4403); assert.equal(registry.hubs.get('ABC234'),hub);
+  hub.markDirty();
+  await wait(40);
+  assert.equal(checkpoints,1); assert.equal(hub.dirty,false); assert.equal(hub.stopped,true); assert.equal(registry.hubs.has('ABC234'),false);
+});
+
+test('reconnect during revoked-last-client finalization cancels cleanup without double removal', async () => {
+  const fresh=baseRoom(); fresh.players[0].leftAt=new Date();
+  let resolveWrite,checkpointStartedResolve,removed=0;
+  const checkpointStarted=new Promise(resolve=>{checkpointStartedResolve=resolve;});
+  const adapter={loadRoom:async()=>baseRoom(),refresh:async()=>structuredClone(fresh),checkpoint:async(_state,expected)=>{checkpointStartedResolve();return new Promise(resolve=>{resolveWrite=()=>resolve({version:expected+1,playerSeqs:{}});});}};
+  const hub=await new RoomHub('ABC234',adapter,()=>{removed++;},0,{autoStart:false}).init();
+  const first=new FakeWs(); hub.add(first,{playerId:'p1'});
+  await hub.syncExternal();
+  assert.equal(hub.clients.size,0);
+  hub.markDirty();
+  await checkpointStarted;
+  const second=new FakeWs(); assert.equal(hub.add(second,{playerId:'p2'}),true);
+  resolveWrite(); await wait(20);
+  assert.equal(hub.stopped,false); assert.equal(removed,0); assert.equal(hub.clients.size,1); assert.equal(hub.clients.has(second),true);
+  hub.remove(first);
+  assert.equal(hub.clients.size,1);
+  hub.stop();
+});
+
 test('input seq is a bounded DB integer and presence writes are throttled', async () => {
   let presence=0;
   const adapter={loadRoom:async()=>baseRoom(),refresh:async()=>baseRoom(),checkpoint:async(_s,e)=>({version:e+1,playerSeqs:{}}),touchPresence:async ids=>{presence++;assert.deepEqual(ids,['p1']);}};

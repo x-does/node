@@ -208,6 +208,8 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
   const requestOrderRef = useRef(0);
   const appliedResponseOrderRef = useRef(0);
   const appliedRoomVersionRef = useRef(0);
+  const transportEpochRef = useRef(0);
+  const httpControllerRef = useRef<AbortController | null>(null);
   const stateSizeRef = useRef({ width: initialSize.width, height: initialSize.height });
 
   const render = useCallback((gameState: DnpGameState, room?: DnpPublicRoom | null) => {
@@ -266,9 +268,9 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
     appliedRoomVersionRef.current = session.room.version;
   }, [session]);
 
-  const applyAuthoritativeRoom = useCallback((room: DnpPublicRoom, responseOrder: number) => {
+  const applyAuthoritativeRoom = useCallback((room: DnpPublicRoom, responseOrder: number, responseEpoch = transportEpochRef.current) => {
     const current = sessionRef.current;
-    if (!current || !shouldAcceptDnpResponse(current.room.code, appliedRoomVersionRef.current, appliedResponseOrderRef.current, room, responseOrder)) return;
+    if (!current || !shouldAcceptDnpResponse(current.room.code, appliedRoomVersionRef.current, appliedResponseOrderRef.current, room, responseOrder, transportEpochRef.current, responseEpoch)) return;
     appliedResponseOrderRef.current = responseOrder;
     appliedRoomVersionRef.current = room.version;
     authoritativeRoomRef.current = room;
@@ -348,6 +350,7 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
 
   const sessionCode = session?.room.code;
   const sessionToken = session?.token;
+  const realtimeProven = connectionState === 'realtime';
 
   useEffect(() => {
     if (!sessionCode || !sessionToken) {
@@ -360,8 +363,20 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
       code: sessionCode,
       token: sessionToken,
       playerId: sessionRef.current?.playerId,
-      onSnapshot: (room) => applyAuthoritativeRoom(room, ++requestOrderRef.current),
-      onState: setConnectionState,
+      getInputSequenceHighWater: () => Math.max(inputSeqRef.current, inputDeliveryRef.current.sequence, inputDeliveryRef.current.pending?.seq ?? 0),
+      onInputSequenceIssued: (seq) => {
+        inputSeqRef.current = Math.max(inputSeqRef.current, seq);
+        inputDeliveryRef.current = { acknowledgedPosition: inputDeliveryRef.current.acknowledgedPosition, sequence: seq, pending: null };
+      },
+      onSnapshot: (room) => applyAuthoritativeRoom(room, ++requestOrderRef.current, transportEpochRef.current),
+      onState: (nextState) => {
+        if (nextState === 'realtime' || nextState === 'fallback') transportEpochRef.current++;
+        if (nextState === 'realtime') {
+          httpControllerRef.current?.abort();
+          httpControllerRef.current = null;
+        }
+        setConnectionState(nextState);
+      },
     });
     socketTransportRef.current = transport;
     void transport.start();
@@ -377,9 +392,12 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
   }, [applyAuthoritativeRoom, sessionCode, sessionToken]);
 
   useEffect(() => {
-    if (!sessionCode || !sessionToken || connectionState !== 'fallback') return undefined;
+    if (!sessionCode || !sessionToken || realtimeProven) return undefined;
     let stopped = false;
     const controller = new AbortController();
+    const epoch = ++transportEpochRef.current;
+    httpControllerRef.current?.abort();
+    httpControllerRef.current = controller;
     const sendInput = async () => {
       const currentSession = sessionRef.current;
       if (!currentSession || currentSession.room.code !== sessionCode) return;
@@ -389,6 +407,7 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
       inputDeliveryRef.current = queued;
       if (!queued.pending) return;
       const pending = queued.pending;
+      inputSeqRef.current = Math.max(inputSeqRef.current, pending.seq);
       await postDnp(`/api/dnp/rooms/${sessionCode}/input`, { token: sessionToken, position: pending.position, seq: pending.seq }, controller.signal);
       inputDeliveryRef.current = acknowledgeDnpInput(inputDeliveryRef.current, pending.seq);
       inputSeqRef.current = Math.max(inputSeqRef.current, pending.seq);
@@ -411,7 +430,7 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
         const order = ++requestOrderRef.current;
         try {
           const room = await pollDnpRoom(sessionCode, sessionToken, controller.signal);
-          if (!stopped) applyAuthoritativeRoom(room, order);
+          if (!stopped) applyAuthoritativeRoom(room, order, epoch);
         } catch (error) {
           if (!stopped && !controller.signal.aborted) setNotice(error instanceof Error ? error.message : 'Polling failed.');
         }
@@ -424,8 +443,9 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
     return () => {
       stopped = true;
       controller.abort();
+      if (httpControllerRef.current === controller) httpControllerRef.current = null;
     };
-  }, [applyAuthoritativeRoom, connectionState, sessionCode, sessionToken]);
+  }, [applyAuthoritativeRoom, realtimeProven, sessionCode, sessionToken]);
 
   const validName = name.trim().length >= 1 && name.trim().length <= 16;
   const runAction = async (action: () => Promise<void>, options: { requireName?: boolean } = { requireName: true }) => {
@@ -478,8 +498,9 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
     const current = sessionRef.current;
     if (!current) return;
     const order = ++requestOrderRef.current;
+    const epoch = transportEpochRef.current;
     const payload = await postDnp(`/api/dnp/rooms/${current.room.code}/admin`, { token: current.token, action, ...extra });
-    applyAuthoritativeRoom(payload.room, order);
+    applyAuthoritativeRoom(payload.room, order, epoch);
     socketTransportRef.current?.requestSync();
   }, { requireName: false });
   const leaveRoom = () => void runAction(async () => {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DnpSocketTransport, shouldSendSocketInput } from './multiplayer-socket';
+import { DnpSocketTransport, isDnpPublicRoom, shouldSendSocketInput } from './multiplayer-socket';
 
 class FakeSocket {
   static OPEN = 1;
@@ -42,6 +42,72 @@ test('socket input is bounded to changed values', () => {
   assert.equal(shouldSendSocketInput(null, .5), true);
   assert.equal(shouldSendSocketInput(.5, .501), false);
   assert.equal(shouldSendSocketInput(.5, .51), true);
+});
+
+test('validates the complete public-room shape before proving realtime', async () => {
+  assert.equal(isDnpPublicRoom(roomFor()), true);
+  assert.equal(isDnpPublicRoom({ ...roomFor(), ball: { x: .5, y: .5, vx: 'fast', vy: .1 } }), false);
+  assert.equal(isDnpPublicRoom({ ...roomFor(), players: [{ ...roomFor().players[0], online: 'yes' }] }), false);
+  const socket = new FakeSocket('wss://example.test');
+  const states: string[] = [];
+  const snapshots: number[] = [];
+  const delays: number[] = [];
+  const transport = new DnpSocketTransport({ code: 'ABC234', token: 'token',
+    fetchTicket: async () => ({ url: socket.url, ticket: 'ticket' }), createSocket: () => socket as any,
+    scheduleRetry: (_callback, delay) => { delays.push(delay); return 0 as any; },
+    onSnapshot: (_room, seq) => snapshots.push(seq), onState: state => states.push(state),
+  });
+  void transport.start(); await Promise.resolve(); socket.readyState = 1; socket.emit('open', {});
+  socket.emit('message', { data: JSON.stringify({ type: 'snapshot', seq: 1, room: { ...roomFor(), scores: { left: 0 } } }) });
+  assert.deepEqual(snapshots, []);
+  assert.equal(states.at(-1), 'fallback');
+  assert.equal(socket.readyState, 3);
+  assert.equal(delays.length, 1);
+  assert.equal(transport.sendInput(.7, 1000), false);
+  transport.stop();
+});
+
+test('socket input sequence is strictly above locally issued and in-flight HTTP input', async () => {
+  const socket = new FakeSocket('wss://example.test');
+  let highWater = 17;
+  const issued: number[] = [];
+  const transport = new DnpSocketTransport({ code: 'ABC234', token: 'token', playerId: 'p1',
+    getInputSequenceHighWater: () => highWater,
+    onInputSequenceIssued: seq => { highWater = seq; issued.push(seq); },
+    fetchTicket: async () => ({ url: socket.url, ticket: 'ticket' }), createSocket: () => socket as any, onSnapshot: () => {},
+  });
+  const starting = transport.start(); await Promise.resolve(); socket.readyState = 1; socket.emit('open', {}); await starting;
+  socket.emit('message', { data: JSON.stringify({ type: 'snapshot', seq: 1, room: roomFor(12) }) });
+  assert.equal(transport.sendInput(.8, 1000), true);
+  assert.equal(JSON.parse(socket.sent.at(-1)!).seq, 18);
+  assert.deepEqual(issued, [18]);
+  transport.stop();
+});
+
+test('start is idempotent and closes the prior socket before opening another', async () => {
+  const sockets: FakeSocket[] = [];
+  const transport = new DnpSocketTransport({ code: 'ABC234', token: 'token',
+    fetchTicket: async () => ({ url: 'wss://example.test', ticket: 'ticket' }),
+    createSocket: url => { const socket = new FakeSocket(url); sockets.push(socket); return socket as any; }, onSnapshot: () => {},
+  });
+  void transport.start(); await Promise.resolve(); sockets[0].readyState = 1; sockets[0].emit('open', {});
+  void transport.start(); await Promise.resolve();
+  assert.equal(sockets[0].readyState, 3);
+  assert.equal(sockets.length, 2);
+  transport.stop();
+});
+
+test('retry policy enters a slow capped circuit probe after configured failures', async () => {
+  const delays: number[] = [];
+  const transport = new DnpSocketTransport({ code: 'ABC234', token: 'token', maxFailures: 2, circuitProbeMs: 60_000,
+    reconnectDelaysMs: [100, 200], fetchTicket: async () => { throw Object.assign(new Error('gateway'), { retryable: true }); },
+    scheduleRetry: (_callback, delay) => { delays.push(delay); return 0 as any; }, onSnapshot: () => {},
+  });
+  await transport.start();
+  await transport.retryNowForTest();
+  await transport.retryNowForTest();
+  assert.deepEqual(delays, [100, 60_000, 60_000]);
+  transport.stop();
 });
 
 test('reconnect starts a new snapshot epoch and initializes input sequence from own snapshot', async () => {
@@ -102,4 +168,85 @@ test('snapshot watchdog rearms and falls back when an established realtime socke
   await new Promise((resolve) => setTimeout(resolve, 10));
   assert.equal(states.at(-1), 'fallback'); assert.equal(socket.readyState,3);
   transport.stop();
+});
+
+// Reliability contract: HTTP remains primary until a valid snapshot proves realtime.
+test('permanent ticket unavailability falls back after exactly one request', async () => {
+  let requests = 0;
+  const states: string[] = [];
+  const transport = new DnpSocketTransport({ code: 'ABC234', token: 'token', reconnectDelaysMs: [0],
+    fetchTicket: async () => { requests++; return { available: false, reason: 'not_configured', retryable: false }; },
+    onSnapshot: () => {}, onState: state => states.push(state),
+  });
+  await transport.start();
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(requests, 1);
+  assert.equal(states.at(-1), 'fallback');
+  transport.stop();
+});
+
+test('first transient failure enables fallback immediately and quiet retry waits for snapshot before realtime', async () => {
+  let requests = 0;
+  const sockets: FakeSocket[] = [];
+  const states: string[] = [];
+  const transport = new DnpSocketTransport({ code: 'ABC234', token: 'token', reconnectDelaysMs: [0],
+    fetchTicket: async () => { requests++; if (requests === 1) throw Object.assign(new Error('gateway'), { retryable: true }); return { available: true, url: 'wss://example.test', ticket: 'ticket' }; },
+    createSocket: url => { const socket = new FakeSocket(url); sockets.push(socket); return socket as any; },
+    onSnapshot: () => {}, onState: state => states.push(state),
+  });
+  await transport.start();
+  assert.equal(states.at(-1), 'fallback');
+  await new Promise(resolve => setTimeout(resolve, 5));
+  assert.equal(requests, 2);
+  assert.deepEqual(states, ['connecting', 'fallback']);
+  sockets[0].readyState = 1; sockets[0].emit('open', {});
+  assert.equal(states.at(-1), 'fallback');
+  sockets[0].emit('message', { data: JSON.stringify({ type: 'snapshot', seq: 1, room: roomFor() }) });
+  assert.equal(states.at(-1), 'realtime');
+  transport.stop();
+});
+
+test('socket loss returns to fallback immediately and stop cancels background retries', async () => {
+  let requests = 0;
+  const sockets: FakeSocket[] = [];
+  const states: string[] = [];
+  const transport = new DnpSocketTransport({ code: 'ABC234', token: 'token', reconnectDelaysMs: [30],
+    fetchTicket: async () => { requests++; return { available: true, url: 'wss://example.test', ticket: 'ticket' }; },
+    createSocket: url => { const socket = new FakeSocket(url); sockets.push(socket); return socket as any; },
+    onSnapshot: () => {}, onState: state => states.push(state),
+  });
+  const starting = transport.start(); await Promise.resolve(); sockets[0].readyState = 1; sockets[0].emit('open', {}); await starting;
+  sockets[0].emit('message', { data: JSON.stringify({ type: 'snapshot', seq: 1, room: roomFor() }) });
+  sockets[0].emit('close', {});
+  assert.equal(states.at(-1), 'fallback');
+  transport.stop();
+  await new Promise(resolve => setTimeout(resolve, 40));
+  assert.equal(requests, 1);
+});
+
+test('default ticket fetch classifies non-JSON gateways and honors Retry-After on 429', async () => {
+  const originalFetch = globalThis.fetch;
+  const delays: number[] = [];
+  let requests = 0;
+  globalThis.fetch = (async () => {
+    requests++;
+    if (requests === 1) return new Response('<html>bad gateway</html>', { status: 503, headers: { 'content-type': 'text/html' } });
+    return new Response('rate limited', { status: 429, headers: { 'retry-after': '2' } });
+  }) as typeof fetch;
+  const transport = new DnpSocketTransport({ code: 'ABC234', token: 'token', reconnectDelaysMs: [0],
+    scheduleRetry: (_fn, delay) => { delays.push(delay); return 0 as any; }, onSnapshot: () => {},
+  });
+  try {
+    await transport.start();
+    assert.equal(delays[0], 0);
+    await transport.retryNowForTest();
+    assert.equal(delays[1], 2000);
+  } finally { transport.stop(); globalThis.fetch = originalFetch; }
+});
+
+test('DnpGame keeps HTTP polling active in every state except proven realtime', async () => {
+  const source = await import('node:fs/promises').then(fs => fs.readFile(new URL('./DnpGame.tsx', import.meta.url), 'utf8'));
+  assert.match(source, /realtimeProven\s*=\s*connectionState\s*===\s*'realtime'/);
+  assert.match(source, /!sessionCode\s*\|\|\s*!sessionToken\s*\|\|\s*realtimeProven/);
+  assert.doesNotMatch(source, /connectionState\s*!==\s*'fallback'/);
 });

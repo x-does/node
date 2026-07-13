@@ -44,6 +44,6 @@ export function projectDnpRoom(room: DnpPublicRoom, elapsedMs: number) {
   return advanceDnpSimulation(room, elapsedMs);
 }
 
-export function shouldAcceptDnpResponse(currentCode: string, latestVersion: number, latestAppliedOrder: number, response: DnpPublicRoom, responseOrder: number) {
-  return response.code === currentCode && (response.version > latestVersion || (response.version === latestVersion && responseOrder >= latestAppliedOrder));
+export function shouldAcceptDnpResponse(currentCode: string, latestVersion: number, latestAppliedOrder: number, response: DnpPublicRoom, responseOrder: number, currentEpoch = 0, responseEpoch = currentEpoch) {
+  return responseEpoch === currentEpoch && response.code === currentCode && (response.version > latestVersion || (response.version === latestVersion && responseOrder >= latestAppliedOrder));
 }

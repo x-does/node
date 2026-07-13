@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
+import { spawn } from 'node:child_process';
 import WebSocket from 'ws';
 
 import { createDnpWsServer } from '../src/server.js';
@@ -24,6 +25,41 @@ test('healthz is isolated and reports ok', async () => {
   await app.close();
 });
 
+test('readyz checks database readiness and reports unavailable databases', async () => {
+  let ready = true;
+  const adapter = { loadRoom: async () => structuredClone(room), checkpoint: async () => {}, refresh: async () => structuredClone(room), ready: async () => ready };
+  const app = createDnpWsServer({ adapter, secret: 'secret', allowedOrigins: ['https://node.xdoes.space'], readyCacheMs: 0 });
+  app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening');
+  const { port } = app.server.address();
+  let response = await fetch(`http://127.0.0.1:${port}/readyz`);
+  assert.equal(response.status, 200); assert.deepEqual(await response.json(), { ok: true, service: 'dnp-ws', database: 'ready' });
+  ready = false;
+  response = await fetch(`http://127.0.0.1:${port}/readyz`);
+  assert.equal(response.status, 503); assert.deepEqual(await response.json(), { ok: false, service: 'dnp-ws', database: 'unavailable' });
+  await app.close();
+});
+
+test('readyz coalesces concurrent checks, caches briefly, and times out quickly', async () => {
+  let calls = 0, release;
+  const pending = new Promise(resolve => { release = resolve; });
+  const adapter = { ready: async () => { calls++; return pending; }, close: async () => {} };
+  const app = createDnpWsServer({ adapter, secret: 'secret', allowedOrigins: [], readyTimeoutMs: 15, readyCacheMs: 30 });
+  app.server.listen(0, '127.0.0.1'); await once(app.server, 'listening'); const { port } = app.server.address();
+  const [first, second] = await Promise.all([fetch(`http://127.0.0.1:${port}/readyz`), fetch(`http://127.0.0.1:${port}/readyz`)]);
+  assert.equal(first.status, 503); assert.equal(second.status, 503); assert.equal(calls, 1);
+  const cached = await fetch(`http://127.0.0.1:${port}/readyz`); assert.equal(cached.status, 503); assert.equal(calls, 1);
+  release(true);
+  await app.close();
+});
+
+test('server shutdown is bounded when a hub or adapter hangs', async () => {
+  const adapter = { close: async () => new Promise(() => {}) };
+  const app = createDnpWsServer({ adapter, secret: 'secret', allowedOrigins: [], shutdownTimeoutMs: 20 });
+  const started = Date.now();
+  await assert.rejects(app.close(), /timed out/i);
+  assert.ok(Date.now() - started < 200);
+});
+
 test('enforces origin, room path and first-message ticket authentication', async () => {
   const { app, ws } = await fixture();
   const denied = new WebSocket(`${ws}/rooms/ABC234`, { origin: 'https://evil.example' });
@@ -33,6 +69,21 @@ test('enforces origin, room path and first-message ticket authentication', async
   client.send(JSON.stringify({ type: 'input', seq: 1, position: .7 }));
   const [code] = await once(client, 'close'); assert.equal(code, 4401);
   await app.close();
+});
+
+test('unauthenticated null is a protocol error and the server process survives without an unhandled rejection', async () => {
+  const child=spawn(process.execPath,['--unhandled-rejections=strict','test/fixtures/null-message-process.js'],{
+    cwd:new URL('..',import.meta.url),
+    stdio:['ignore','pipe','pipe'],
+  });
+  let stdout='',stderr='';
+  child.stdout.setEncoding('utf8'); child.stderr.setEncoding('utf8');
+  child.stdout.on('data',chunk=>{stdout+=chunk;});
+  child.stderr.on('data',chunk=>{stderr+=chunk;});
+  const [code,signal]=await once(child,'exit');
+  assert.equal(signal,null);
+  assert.equal(code,0,`child failed\nstdout:\n${stdout}\nstderr:\n${stderr}`);
+  assert.match(stdout,/survived/);
 });
 
 test('authenticates, sequence-checks input and broadcasts snapshots from one hub', async () => {

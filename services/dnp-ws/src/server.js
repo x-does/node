@@ -9,6 +9,13 @@ const reject = (socket, status = '403 Forbidden') => {
 };
 const increment = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
 const decrement = (map, key) => map.set(key, Math.max(0, (map.get(key) ?? 1) - 1));
+const withTimeout = (promise, ms, timeoutValue, reject = false) => new Promise((resolve, rejectPromise) => {
+  const timer = setTimeout(() => reject ? rejectPromise(timeoutValue) : resolve(timeoutValue), ms);
+  Promise.resolve(promise).then(
+    value => { clearTimeout(timer); resolve(value); },
+    error => { clearTimeout(timer); rejectPromise(error); },
+  );
+});
 
 export function createHubRegistry({ adapter, idleMs, hubOptions }) {
   const hubs = new Map();
@@ -35,8 +42,9 @@ export function createHubRegistry({ adapter, idleMs, hubOptions }) {
 }
 
 export function createDnpWsServer({
-  adapter, secret, allowedOrigins, idleMs = 30000, maxPayload = 8192,
+  adapter, secret, allowedOrigins, idleMs = 30000, maxPayload = 8192, authTimeoutMs = 5000,
   maxSockets = 1000, maxRoomSockets = 100, maxPlayerSockets = 3, maxPendingAuth = 100,
+  readyTimeoutMs = 1000, readyCacheMs = 1000, shutdownTimeoutMs = 10000,
   hubOptions = {},
 }) {
   const registry = createHubRegistry({ adapter, idleMs, hubOptions });
@@ -44,8 +52,23 @@ export function createDnpWsServer({
   const roomCounts = new Map(), playerCounts = new Map();
   let pendingAuth = 0;
   let closing = false, closePromise = null;
+  let readyCheck = null, readyCache = null;
+  const readiness = () => {
+    const now = Date.now();
+    if (readyCache && readyCache.expiresAt > now) return Promise.resolve(readyCache.value);
+    if (readyCheck) return readyCheck;
+    readyCheck = withTimeout(
+      Promise.resolve().then(() => adapter.ready()).then(Boolean).catch(() => false),
+      readyTimeoutMs,
+      false,
+    ).then(value => {
+      readyCache = { value, expiresAt: Date.now() + readyCacheMs };
+      return value;
+    }).finally(() => { readyCheck = null; });
+    return readyCheck;
+  };
 
-  const server = http.createServer((req, res) => {
+  const server = http.createServer(async (req, res) => {
     if (closing) {
       res.writeHead(503, { connection: 'close' }); res.end();
       return;
@@ -53,6 +76,12 @@ export function createDnpWsServer({
     if (req.method === 'GET' && req.url === '/healthz') {
       res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
       res.end(JSON.stringify({ ok: true, service: 'dnp-ws' }));
+      return;
+    }
+    if (req.method === 'GET' && req.url === '/readyz') {
+      const ready = await readiness();
+      res.writeHead(ready ? 200 : 503, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify({ ok: ready, service: 'dnp-ws', database: ready ? 'ready' : 'unavailable' }));
       return;
     }
     res.writeHead(404); res.end();
@@ -92,12 +121,15 @@ export function createDnpWsServer({
       decrement(roomCounts, code);
       if (playerReserved) { decrement(playerCounts, playerKey); playerReserved = false; }
     };
-    const authTimer = setTimeout(() => ws.close(4401, 'authentication required'), 5000);
+    const authTimer = setTimeout(() => ws.close(4401, 'authentication required'), authTimeoutMs);
     ws.on('pong', () => { isAlive = true; });
-    ws.on('message', async data => {
+    const handleMessage = async data => {
       if (data.length > maxPayload) { ws.close(4400, 'payload too large'); return; }
       let msg;
       try { msg = JSON.parse(String(data)); } catch { ws.close(4400, 'invalid json'); return; }
+      if (msg === null || typeof msg !== 'object' || Array.isArray(msg) || Object.getPrototypeOf(msg) !== Object.prototype) {
+        ws.close(4400, 'invalid message'); return;
+      }
       if (authState !== 'authed') {
         if (authState === 'authenticating' || authState === 'closed') return;
         if (closing) { releasePending(); ws.close(1012, 'server shutting down'); return; }
@@ -120,6 +152,11 @@ export function createDnpWsServer({
       if (msg.type === 'input') hub.input(ws, msg);
       else if (msg.type === 'admin') await hub.admin(ws, msg).catch(() => ws.close(4409, 'admin sync failed'));
       else if (msg.type === 'sync') await hub.syncExternal(true).catch(() => ws.close(4409, 'sync failed'));
+    };
+    ws.on('message', data => {
+      handleMessage(data).catch(() => {
+        if (authState !== 'closed') ws.close(1011, 'message handling failed');
+      });
     });
     ws.on('close', () => {
       authState = 'closed'; clearTimeout(authTimer); releasePending(); hub?.remove(ws); releaseCapacity();
@@ -140,7 +177,7 @@ export function createDnpWsServer({
         ? new Promise(resolve => server.close(resolve))
         : Promise.resolve();
       for (const ws of wss.clients) ws.terminate();
-      closePromise = (async () => {
+      const cleanup = (async () => {
         const errors = [];
         for (const value of registry.hubs.values()) {
           try { const hub = await value; await hub.shutdown(); } catch (error) { errors.push(error); }
@@ -149,6 +186,7 @@ export function createDnpWsServer({
         try { await adapter.close?.(); } catch (error) { errors.push(error); }
         if (errors.length) throw new AggregateError(errors, 'failed to close dnp-ws server cleanly');
       })();
+      closePromise = withTimeout(cleanup, shutdownTimeoutMs, new Error('dnp-ws shutdown timed out'), true);
       return closePromise;
     },
   };

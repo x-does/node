@@ -1,0 +1,24 @@
+[Unit]
+Description=DefinitelyNotPong realtime service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dnp
+Group=dnp
+WorkingDirectory=/opt/dnp/services/dnp-ws
+EnvironmentFile=/etc/dnp-ws.env
+ExecStart=/usr/bin/node src/index.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/dnp/services/dnp-ws
+LimitNOFILE=65536
+TimeoutStopSec=30
+
+[Install]
+WantedBy=multi-user.target
