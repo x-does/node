@@ -13,6 +13,7 @@ import {
 } from './game';
 import type { DnpPublicRoom } from '@/lib/dnp/domain';
 import { getDnpSlot, getDnpSlotGeometry } from '@/lib/dnp/domain';
+import { DnpSocketTransport, type DnpSocketConnectionState } from './multiplayer-socket';
 import {
   acknowledgeDnpInput,
   applyLocalDnpInput,
@@ -190,7 +191,9 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
   const [session, setSession] = useState<MultiplayerSession | null>(null);
   const [notice, setNotice] = useState('Enter a display name (1-16 chars) to play.');
   const [busy, setBusy] = useState(false);
+  const [connectionState, setConnectionState] = useState<DnpSocketConnectionState>('fallback');
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const socketTransportRef = useRef<DnpSocketTransport | null>(null);
   const frameRef = useRef<number | null>(null);
   const lastTimeRef = useRef<number | null>(null);
   const inputRef = useRef<DnpInputState>(inputTemplate());
@@ -347,7 +350,34 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
   const sessionToken = session?.token;
 
   useEffect(() => {
-    if (!sessionCode || !sessionToken) return undefined;
+    if (!sessionCode || !sessionToken) {
+      socketTransportRef.current?.stop();
+      socketTransportRef.current = null;
+      setConnectionState('fallback');
+      return undefined;
+    }
+    const transport = new DnpSocketTransport({
+      code: sessionCode,
+      token: sessionToken,
+      playerId: sessionRef.current?.playerId,
+      onSnapshot: (room) => applyAuthoritativeRoom(room, ++requestOrderRef.current),
+      onState: setConnectionState,
+    });
+    socketTransportRef.current = transport;
+    void transport.start();
+    const inputTimer = window.setInterval(() => {
+      const position = localInputPositionRef.current;
+      if (position !== null) transport.sendInput(position);
+    }, 1000 / 30);
+    return () => {
+      window.clearInterval(inputTimer);
+      transport.stop();
+      if (socketTransportRef.current === transport) socketTransportRef.current = null;
+    };
+  }, [applyAuthoritativeRoom, sessionCode, sessionToken]);
+
+  useEffect(() => {
+    if (!sessionCode || !sessionToken || connectionState !== 'fallback') return undefined;
     let stopped = false;
     const controller = new AbortController();
     const sendInput = async () => {
@@ -395,7 +425,7 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
       stopped = true;
       controller.abort();
     };
-  }, [applyAuthoritativeRoom, sessionCode, sessionToken]);
+  }, [applyAuthoritativeRoom, connectionState, sessionCode, sessionToken]);
 
   const validName = name.trim().length >= 1 && name.trim().length <= 16;
   const runAction = async (action: () => Promise<void>, options: { requireName?: boolean } = { requireName: true }) => {
@@ -450,11 +480,13 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
     const order = ++requestOrderRef.current;
     const payload = await postDnp(`/api/dnp/rooms/${current.room.code}/admin`, { token: current.token, action, ...extra });
     applyAuthoritativeRoom(payload.room, order);
+    socketTransportRef.current?.requestSync();
   }, { requireName: false });
   const leaveRoom = () => void runAction(async () => {
     const current = sessionRef.current;
     if (!current) return;
     await postDnp(`/api/dnp/rooms/${current.room.code}/leave`, { token: current.token });
+    socketTransportRef.current?.requestSync();
     window.sessionStorage.removeItem(`dnp:${current.room.code}`);
     setSession(null);
     setMode('single');
@@ -483,7 +515,7 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
             <p className="text-xs font-black uppercase tracking-[0.24em] text-emerald-300">Browser-only arcade</p>
             <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] md:text-6xl">DefinitelyNotPong</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
-              A Hostinger-safe paddle duel: local single-player plus smoothly predicted multiplayer rooms, no WebSockets and no custom runtime.
+              A Hostinger-safe paddle duel: local single-player plus low-latency realtime multiplayer with automatic HTTP fallback.
             </p>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-3 text-center md:mt-0">
@@ -519,6 +551,7 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
           <div className="rounded-[1.6rem] border border-emerald-300/20 bg-emerald-400/10 p-4 text-sm text-emerald-50">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <strong className="text-lg">Room {session.room.code}</strong>
+              <span className="rounded-full bg-black/25 px-3 py-1 text-xs font-black uppercase tracking-wider">{connectionState === 'realtime' ? 'Realtime' : connectionState === 'fallback' ? 'Fallback' : connectionState === 'connecting' ? 'Connecting' : 'Reconnecting'}</span>
               <a className="underline" href={`/dnp/join/${session.room.code}`}>Share /dnp/join/{session.room.code}</a>
               <button className="rounded-xl bg-white/15 px-3 py-2 font-black" onClick={() => void navigator.clipboard?.writeText(`${window.location.origin}/dnp/join/${session.room.code}`).then(() => setNotice('Share link copied.'))} type="button">Copy link</button>
               <button className="rounded-xl bg-rose-500/80 px-3 py-2 font-black" onClick={leaveRoom} type="button">Leave</button>

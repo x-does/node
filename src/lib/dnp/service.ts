@@ -238,6 +238,15 @@ export class DnpRoomService {
     }));
   }
 
+  async authenticatePlayer(codeValue: unknown, tokenValue?: unknown) {
+    const code = normalizeDnpCode(codeValue);
+    if (!code) throw new DnpServiceError(400, 'Invalid room code.');
+    const found = await this.adapter.findRoomByCode(code);
+    if (!found) throw new DnpServiceError(404, 'Room not found.');
+    const player = assertToken(findPlayerByToken(found.players, tokenValue), tokenValue);
+    return { roomCode: found.code, playerId: player.id, isAdmin: found.adminPlayerId === player.id };
+  }
+
   async pollRoom(codeValue: unknown, tokenValue?: unknown) {
     const code = normalizeDnpCode(codeValue);
     if (!code) throw new DnpServiceError(400, 'Invalid room code.');
@@ -260,16 +269,17 @@ export class DnpRoomService {
 
   async submitInput(codeValue: unknown, tokenValue: unknown, positionValue: unknown, seqValue: unknown) {
     const code = normalizeDnpCode(codeValue);
-    if (!code || typeof positionValue !== 'number' || typeof seqValue !== 'number') throw new DnpServiceError(400, 'Invalid input.');
+    if (!code || typeof positionValue !== 'number' || !Number.isFinite(positionValue) || typeof seqValue !== 'number' || !Number.isInteger(seqValue) || seqValue < 0 || seqValue > 2_147_483_647) throw new DnpServiceError(400, 'Invalid input.');
     const position = Math.max(0, Math.min(1, positionValue));
+    const seq = seqValue;
     return withWriteRetry(() => this.adapter.transaction(async (tx) => {
       const found = await tx.findRoomByCode(code);
       if (!found) throw new DnpServiceError(404, 'Room not found.');
       let players = await expireStalePlayers(tx, found.players);
       let room = await transferAdminIfNeeded(tx, found, players);
       const player = assertToken(findPlayerByToken(players, tokenValue), tokenValue);
-      if (seqValue > player.inputSeq) {
-        const updated = await tx.updatePlayerInputIfNewer(player.id, position, seqValue, now());
+      if (seq > player.inputSeq) {
+        const updated = await tx.updatePlayerInputIfNewer(player.id, position, seq, now());
         if (updated) players = players.map((entry) => (entry.id === updated.id ? updated : entry));
       }
       return { ok: true, room: toDnpPublicRoom(room, players) };
