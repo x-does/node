@@ -6,6 +6,11 @@ const BALL_RADIUS = 10;
 const BALL_SPEED = 420;
 const MAX_STEPS = 20;
 const FIXED_DT = 1 / 30;
+const MAX_CATCH_UP_SECONDS = 4;
+
+export type DnpSimulationOptions = {
+  onStep?: () => void;
+};
 
 export function createDnpBall(direction: 1 | -1 = 1) {
   return { x: 0.5, y: 0.5, vx: direction * 0.42, vy: 0.17 };
@@ -69,37 +74,47 @@ function bounce(ball: ReturnType<typeof denormalizeBall>, player: DnpPublicPlaye
   }
 }
 
-export function advanceDnpSimulation(room: DnpPublicRoom, elapsedMs: number): DnpPublicRoom {
+export function advanceDnpSimulation(room: DnpPublicRoom, elapsedMs: number, options: DnpSimulationOptions = {}): DnpPublicRoom {
   if (room.status !== 'playing' || elapsedMs <= 0) return room;
   const next: DnpPublicRoom = { ...room, scores: { ...room.scores }, ball: { ...room.ball } };
   const ball = denormalizeBall(next.ball);
-  const steps = Math.min(MAX_STEPS, Math.ceil(elapsedMs / 1000 / FIXED_DT));
-  const dt = Math.min(FIXED_DT, elapsedMs / 1000 / Math.max(1, steps));
+  // Bound collision work after a suspended tab/server. We deliberately discard
+  // idle time older than this window, but still advance a useful slice of state;
+  // the service checkpoints lastTickAt to wall-clock now so it cannot stay frozen.
+  let remainingSeconds = Math.min(elapsedMs / 1000, MAX_CATCH_UP_SECONDS);
 
-  for (let step = 0; step < steps; step += 1) {
-    ball.x += ball.vx * dt;
-    ball.y += ball.vy * dt;
+  while (remainingSeconds > 0) {
+    const chunkSeconds = Math.min(remainingSeconds, MAX_STEPS * FIXED_DT);
+    const steps = Math.min(MAX_STEPS, Math.ceil(chunkSeconds / FIXED_DT));
+    const dt = chunkSeconds / Math.max(1, steps);
 
-    if (ball.y - BALL_RADIUS <= 0) {
-      ball.y = BALL_RADIUS;
-      ball.vy = Math.abs(ball.vy || BALL_SPEED * 0.2);
-    } else if (ball.y + BALL_RADIUS >= DNP_ARENA_HEIGHT) {
-      ball.y = DNP_ARENA_HEIGHT - BALL_RADIUS;
-      ball.vy = -Math.abs(ball.vy || BALL_SPEED * 0.2);
+    for (let step = 0; step < steps; step += 1) {
+      options.onStep?.();
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+
+      if (ball.y - BALL_RADIUS <= 0) {
+        ball.y = BALL_RADIUS;
+        ball.vy = Math.abs(ball.vy || BALL_SPEED * 0.2);
+      } else if (ball.y + BALL_RADIUS >= DNP_ARENA_HEIGHT) {
+        ball.y = DNP_ARENA_HEIGHT - BALL_RADIUS;
+        ball.vy = -Math.abs(ball.vy || BALL_SPEED * 0.2);
+      }
+
+      for (const player of next.players) {
+        const paddle = paddleForPlayer(player);
+        if (overlaps(ball, paddle)) bounce(ball, player, paddle);
+      }
+
+      if (ball.x + BALL_RADIUS < 0) {
+        next.scores.right += 1;
+        Object.assign(ball, { x: DNP_ARENA_WIDTH / 2, y: DNP_ARENA_HEIGHT / 2, vx: BALL_SPEED, vy: BALL_SPEED * 0.17 });
+      } else if (ball.x - BALL_RADIUS > DNP_ARENA_WIDTH) {
+        next.scores.left += 1;
+        Object.assign(ball, { x: DNP_ARENA_WIDTH / 2, y: DNP_ARENA_HEIGHT / 2, vx: -BALL_SPEED, vy: BALL_SPEED * 0.17 });
+      }
     }
-
-    for (const player of next.players) {
-      const paddle = paddleForPlayer(player);
-      if (overlaps(ball, paddle)) bounce(ball, player, paddle);
-    }
-
-    if (ball.x + BALL_RADIUS < 0) {
-      next.scores.right += 1;
-      Object.assign(ball, { x: DNP_ARENA_WIDTH / 2, y: DNP_ARENA_HEIGHT / 2, vx: BALL_SPEED, vy: BALL_SPEED * 0.17 });
-    } else if (ball.x - BALL_RADIUS > DNP_ARENA_WIDTH) {
-      next.scores.left += 1;
-      Object.assign(ball, { x: DNP_ARENA_WIDTH / 2, y: DNP_ARENA_HEIGHT / 2, vx: -BALL_SPEED, vy: BALL_SPEED * 0.17 });
-    }
+    remainingSeconds -= chunkSeconds;
   }
 
   next.ball = normalizeBall(ball);

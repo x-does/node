@@ -121,6 +121,7 @@ export type DnpPublicPlayer = {
   isAdmin: boolean;
   online: boolean;
   input: number;
+  inputSeq: number;
 };
 
 export type DnpPublicRoom = {
@@ -154,6 +155,7 @@ export function toDnpPublicRoom(room: DnpStoredRoom, players: DnpStoredPlayer[])
         isAdmin: player.id === room.adminPlayerId,
         online: Date.now() - player.lastSeenAt.getTime() < 30_000,
         input: player.inputPosition,
+        inputSeq: player.inputSeq,
       })),
   };
 }

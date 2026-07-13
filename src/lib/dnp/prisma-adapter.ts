@@ -57,7 +57,7 @@ export class PrismaDnpAdapter implements DnpDataAdapter {
   async transaction<T>(fn: (tx: DnpDataAdapter) => Promise<T>): Promise<T> {
     if (!this.inTransaction && '$transaction' in this.prisma) {
       try {
-        return await (this.prisma as PrismaClient).$transaction((tx): Promise<T> => fn(new PrismaDnpAdapter(tx, true)), { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+        return await (this.prisma as PrismaClient).$transaction((tx): Promise<T> => fn(new PrismaDnpAdapter(tx, true)), { isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted });
       } catch (error) {
         mapPrismaConflict(error);
       }
@@ -120,6 +120,55 @@ export class PrismaDnpAdapter implements DnpDataAdapter {
   async updatePlayer(id: string, data: Partial<DnpStoredPlayer>) {
     try {
       const record = await this.prisma.dnpPlayer.update({ data, where: { id } });
+      return playerFromRecord(record);
+    } catch (error) {
+      mapPrismaConflict(error);
+    }
+  }
+
+  async refreshPlayerIfActive(id: string, name: string, lastSeenAt: Date, expectedTokenHash: string, allowTimedOut = false) {
+    try {
+      const result = await this.prisma.dnpPlayer.updateMany({
+        data: { name, lastSeenAt, leftAt: null },
+        where: {
+          id,
+          tokenHash: expectedTokenHash,
+          ...(allowTimedOut ? {} : { leftAt: null }),
+        },
+      });
+      if (result.count === 0) return null;
+      const record = await this.prisma.dnpPlayer.findUnique({ where: { id } });
+      if (!record) throw new DnpServiceError(404, 'Player not found.');
+      return playerFromRecord(record);
+    } catch (error) {
+      mapPrismaConflict(error);
+    }
+  }
+
+  async updatePlayerInputIfNewer(id: string, position: number, seq: number, lastSeenAt: Date) {
+    try {
+      const result = await this.prisma.dnpPlayer.updateMany({
+        data: { inputPosition: position, inputSeq: seq, lastSeenAt },
+        where: { id, leftAt: null, inputSeq: { lt: seq } },
+      });
+      if (result.count === 0) return null;
+      const record = await this.prisma.dnpPlayer.findUnique({ where: { id } });
+      if (!record) throw new DnpServiceError(404, 'Player not found.');
+      return playerFromRecord(record);
+    } catch (error) {
+      mapPrismaConflict(error);
+    }
+  }
+
+  async expirePlayerIfLastSeenBefore(id: string, cutoff: Date, leftAt: Date) {
+    try {
+      const result = await this.prisma.dnpPlayer.updateMany({
+        data: { leftAt },
+        where: { id, leftAt: null, lastSeenAt: { lte: cutoff } },
+      });
+      if (result.count === 0) return null;
+      const record = await this.prisma.dnpPlayer.findUnique({ where: { id } });
+      if (!record) throw new DnpServiceError(404, 'Player not found.');
       return playerFromRecord(record);
     } catch (error) {
       mapPrismaConflict(error);

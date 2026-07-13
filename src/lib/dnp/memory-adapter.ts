@@ -54,4 +54,31 @@ export class InMemoryDnpAdapter implements DnpDataAdapter {
     this.players.set(id, updated);
     return { ...updated };
   }
+
+  async refreshPlayerIfActive(id: string, name: string, lastSeenAt: Date, expectedTokenHash: string, allowTimedOut = false) {
+    const player = this.players.get(id);
+    if (!player) throw new DnpServiceError(404, 'player missing');
+    if (player.tokenHash !== expectedTokenHash || (player.leftAt && !allowTimedOut)) return null;
+    const updated = { ...player, name, lastSeenAt, leftAt: null };
+    this.players.set(id, updated);
+    return { ...updated };
+  }
+
+  async updatePlayerInputIfNewer(id: string, position: number, seq: number, lastSeenAt: Date) {
+    const player = this.players.get(id);
+    if (!player) throw new DnpServiceError(404, 'player missing');
+    if (player.leftAt || player.inputSeq >= seq) return null;
+    const updated = { ...player, inputPosition: position, inputSeq: seq, lastSeenAt };
+    this.players.set(id, updated);
+    return { ...updated };
+  }
+
+  async expirePlayerIfLastSeenBefore(id: string, cutoff: Date, leftAt: Date) {
+    const player = this.players.get(id);
+    if (!player) throw new DnpServiceError(404, 'player missing');
+    if (player.leftAt || player.lastSeenAt > cutoff) return null;
+    const updated = { ...player, leftAt };
+    this.players.set(id, updated);
+    return { ...updated };
+  }
 }

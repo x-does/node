@@ -13,6 +13,18 @@ import {
 } from './game';
 import type { DnpPublicRoom } from '@/lib/dnp/domain';
 import { getDnpSlot, getDnpSlotGeometry } from '@/lib/dnp/domain';
+import {
+  acknowledgeDnpInput,
+  applyLocalDnpInput,
+  clampDnpInput,
+  DNP_INPUT_INTERVAL_MS,
+  DNP_POLL_INTERVAL_MS,
+  initializeDnpInputSequence,
+  projectDnpRoom,
+  queueDnpInput,
+  shouldAcceptDnpResponse,
+  type DnpInputDeliveryState,
+} from './multiplayer-client';
 
 const inputTemplate = (): DnpInputState => ({ up: false, down: false, left: false, right: false, pointerX: null, pointerY: null });
 
@@ -20,19 +32,20 @@ type MultiplayerSession = { room: DnpPublicRoom; token: string; playerId: string
 
 type DnpGameProps = { initialJoin?: { code?: string } };
 
-async function postDnp(path: string, body: Record<string, unknown>) {
+async function postDnp(path: string, body: Record<string, unknown>, signal?: AbortSignal) {
   const response = await fetch(path, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    signal,
   });
   const payload = (await response.json()) as Record<string, unknown>;
   if (!response.ok) throw new Error(typeof payload.error === 'string' ? payload.error : 'DNP request failed.');
   return payload as { room: DnpPublicRoom; token?: string; playerId?: string };
 }
 
-async function pollDnpRoom(code: string, token: string) {
-  const response = await fetch(`/api/dnp/rooms/${code}`, { cache: 'no-store', headers: { Authorization: `Bearer ${token}` } });
+async function pollDnpRoom(code: string, token: string, signal?: AbortSignal) {
+  const response = await fetch(`/api/dnp/rooms/${code}`, { cache: 'no-store', headers: { Authorization: `Bearer ${token}` }, signal });
   const payload = (await response.json()) as { room?: DnpPublicRoom; error?: string };
   if (!response.ok || !payload.room) throw new Error(payload.error ?? 'Polling failed.');
   return payload.room;
@@ -183,8 +196,15 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
   const inputRef = useRef<DnpInputState>(inputTemplate());
   const activePointerRef = useRef<number | null>(null);
   const inputSeqRef = useRef(0);
-  const lastSentInputRef = useRef(-1);
+  const inputDeliveryRef = useRef<DnpInputDeliveryState>({ acknowledgedPosition: null, sequence: 0, pending: null });
+  const localInputPositionRef = useRef<number | null>(null);
   const sessionRef = useRef<MultiplayerSession | null>(null);
+  const gameStateRef = useRef(state);
+  const authoritativeRoomRef = useRef<DnpPublicRoom | null>(null);
+  const authoritativeReceivedAtRef = useRef(0);
+  const requestOrderRef = useRef(0);
+  const appliedResponseOrderRef = useRef(0);
+  const appliedRoomVersionRef = useRef(0);
   const stateSizeRef = useRef({ width: initialSize.width, height: initialSize.height });
 
   const render = useCallback((gameState: DnpGameState, room?: DnpPublicRoom | null) => {
@@ -219,19 +239,75 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
 
   useEffect(() => {
     sessionRef.current = session;
+    if (!session) {
+      authoritativeRoomRef.current = null;
+      localInputPositionRef.current = null;
+      inputSeqRef.current = 0;
+      inputDeliveryRef.current = { acknowledgedPosition: null, sequence: 0, pending: null };
+    }
   }, [session]);
 
   useEffect(() => {
+    gameStateRef.current = state;
+  }, [state]);
+
+  useEffect(() => {
+    if (!session || authoritativeRoomRef.current?.code === session.room.code) return;
+    authoritativeRoomRef.current = session.room;
+    authoritativeReceivedAtRef.current = performance.now();
+    const player = session.room.players.find((entry) => entry.id === session.playerId);
+    localInputPositionRef.current = player?.input ?? null;
+    inputSeqRef.current = initializeDnpInputSequence(inputSeqRef.current, session.room, session.playerId);
+    inputDeliveryRef.current = { acknowledgedPosition: player?.input ?? null, sequence: inputSeqRef.current, pending: null };
+    appliedResponseOrderRef.current = ++requestOrderRef.current;
+    appliedRoomVersionRef.current = session.room.version;
+  }, [session]);
+
+  const applyAuthoritativeRoom = useCallback((room: DnpPublicRoom, responseOrder: number) => {
+    const current = sessionRef.current;
+    if (!current || !shouldAcceptDnpResponse(current.room.code, appliedRoomVersionRef.current, appliedResponseOrderRef.current, room, responseOrder)) return;
+    appliedResponseOrderRef.current = responseOrder;
+    appliedRoomVersionRef.current = room.version;
+    authoritativeRoomRef.current = room;
+    authoritativeReceivedAtRef.current = performance.now();
+    inputSeqRef.current = initializeDnpInputSequence(inputSeqRef.current, room, current.playerId);
+    inputDeliveryRef.current = { ...inputDeliveryRef.current, sequence: Math.max(inputDeliveryRef.current.sequence, inputSeqRef.current) };
+    setSession((existing) => (existing?.room.code === room.code ? { ...existing, room } : existing));
+  }, []);
+
+  useEffect(() => {
     stateSizeRef.current = { width: state.width, height: state.height };
-    render(state, mode === 'multi' ? session?.room : null);
-  }, [mode, render, session?.room, state]);
+    if (mode !== 'multi') render(state);
+  }, [mode, render, state]);
 
   useEffect(() => {
     const tick = (time: number) => {
       const last = lastTimeRef.current ?? time;
       lastTimeRef.current = time;
       const dt = Math.min((time - last) / 1000, 0.033);
-      setState((current) => (mode === 'multi' ? current : stepDnpGame(current, inputRef.current, dt)));
+      if (mode === 'multi') {
+        const currentSession = sessionRef.current;
+        const authoritative = authoritativeRoomRef.current;
+        if (currentSession && authoritative) {
+          const player = authoritative.players.find((entry) => entry.id === currentSession.playerId);
+          if (player) {
+            const slot = getDnpSlot(player.slotIndex);
+            const controls = inputRef.current;
+            const direction = slot.kind === 'side' ? Number(controls.down) - Number(controls.up) : Number(controls.right) - Number(controls.left);
+            let position = localInputPositionRef.current ?? player.input;
+            position = clampDnpInput(position + direction * dt * 0.7);
+            const size = stateSizeRef.current;
+            if (slot.kind === 'side' && controls.pointerY !== null) position = clampDnpInput(controls.pointerY / size.height);
+            if (slot.kind !== 'side' && controls.pointerX !== null) position = clampDnpInput(controls.pointerX / size.width);
+            localInputPositionRef.current = position;
+            const predicted = applyLocalDnpInput(authoritative, currentSession.playerId, position);
+            const projected = projectDnpRoom(predicted, Math.max(0, time - authoritativeReceivedAtRef.current));
+            render({ ...gameStateRef.current, ...stateSizeRef.current }, projected);
+          }
+        }
+      } else {
+        setState((current) => stepDnpGame(current, inputRef.current, dt));
+      }
       frameRef.current = requestAnimationFrame(tick);
     };
 
@@ -239,7 +315,7 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
     return () => {
       if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
     };
-  }, [mode]);
+  }, [mode, render]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -272,44 +348,54 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
 
   useEffect(() => {
     if (!sessionCode || !sessionToken) return undefined;
+    let stopped = false;
+    const controller = new AbortController();
     const sendInput = async () => {
       const currentSession = sessionRef.current;
-      if (!currentSession) return;
-      const player = currentSession.room.players.find((entry) => entry.id === currentSession.playerId);
-      if (!player) return;
-      const slot = getDnpSlot(player.slotIndex);
-      const controls = inputRef.current;
-      const delta = slot.kind === 'side' ? (controls.down ? 0.035 : 0) - (controls.up ? 0.035 : 0) : (controls.right ? 0.035 : 0) - (controls.left ? 0.035 : 0);
-      let position = Math.max(0, Math.min(1, player.input + delta));
-      const canvas = canvasRef.current;
-      const size = stateSizeRef.current;
-      if (canvas) {
-        if (slot.kind === 'side' && controls.pointerY !== null) position = Math.max(0, Math.min(1, controls.pointerY / size.height));
-        if (slot.kind !== 'side' && controls.pointerX !== null) position = Math.max(0, Math.min(1, controls.pointerX / size.width));
-      }
-      const pointerActive = slot.kind === 'side' ? controls.pointerY !== null : controls.pointerX !== null;
-      if (Math.abs(position - lastSentInputRef.current) < 0.004 && delta === 0 && !pointerActive) return;
-      lastSentInputRef.current = position;
-      inputSeqRef.current += 1;
-      const payload = await postDnp(`/api/dnp/rooms/${sessionCode}/input`, { token: sessionToken, position, seq: inputSeqRef.current });
-      if (payload.room) setSession((current) => (current ? { ...current, room: payload.room } : current));
+      if (!currentSession || currentSession.room.code !== sessionCode) return;
+      const position = localInputPositionRef.current;
+      if (position === null) return;
+      const queued = queueDnpInput(inputDeliveryRef.current, position);
+      inputDeliveryRef.current = queued;
+      if (!queued.pending) return;
+      const pending = queued.pending;
+      await postDnp(`/api/dnp/rooms/${sessionCode}/input`, { token: sessionToken, position: pending.position, seq: pending.seq }, controller.signal);
+      inputDeliveryRef.current = acknowledgeDnpInput(inputDeliveryRef.current, pending.seq);
+      inputSeqRef.current = Math.max(inputSeqRef.current, pending.seq);
     };
-    const inputId = window.setInterval(() => void sendInput().catch(() => undefined), 100);
+    const inputLoop = async () => {
+      while (!stopped) {
+        const startedAt = performance.now();
+        try {
+          await sendInput();
+        } catch {
+          // Polling reports connection failures; input acknowledgements never replace state.
+        }
+        const delay = Math.max(0, DNP_INPUT_INTERVAL_MS - (performance.now() - startedAt));
+        await new Promise((resolve) => window.setTimeout(resolve, delay));
+      }
+    };
     const poll = async () => {
-      try {
-        const room = await pollDnpRoom(sessionCode, sessionToken);
-        setSession((current) => (current ? { ...current, room } : current));
-      } catch (error) {
-        setNotice(error instanceof Error ? error.message : 'Polling failed.');
+      while (!stopped) {
+        const startedAt = performance.now();
+        const order = ++requestOrderRef.current;
+        try {
+          const room = await pollDnpRoom(sessionCode, sessionToken, controller.signal);
+          if (!stopped) applyAuthoritativeRoom(room, order);
+        } catch (error) {
+          if (!stopped && !controller.signal.aborted) setNotice(error instanceof Error ? error.message : 'Polling failed.');
+        }
+        const delay = Math.max(0, DNP_POLL_INTERVAL_MS - (performance.now() - startedAt));
+        await new Promise((resolve) => window.setTimeout(resolve, delay));
       }
     };
-    const id = window.setInterval(poll, 500);
+    void inputLoop();
     void poll();
     return () => {
-      window.clearInterval(id);
-      window.clearInterval(inputId);
+      stopped = true;
+      controller.abort();
     };
-  }, [sessionCode, sessionToken]);
+  }, [applyAuthoritativeRoom, sessionCode, sessionToken]);
 
   const validName = name.trim().length >= 1 && name.trim().length <= 16;
   const runAction = async (action: () => Promise<void>, options: { requireName?: boolean } = { requireName: true }) => {
@@ -361,8 +447,9 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
   const admin = (action: string, extra: Record<string, unknown> = {}) => void runAction(async () => {
     const current = sessionRef.current;
     if (!current) return;
+    const order = ++requestOrderRef.current;
     const payload = await postDnp(`/api/dnp/rooms/${current.room.code}/admin`, { token: current.token, action, ...extra });
-    setSession((existing) => (existing ? { ...existing, room: payload.room } : existing));
+    applyAuthoritativeRoom(payload.room, order);
   }, { requireName: false });
   const leaveRoom = () => void runAction(async () => {
     const current = sessionRef.current;
@@ -396,7 +483,7 @@ export default function DnpGame({ initialJoin }: DnpGameProps = {}) {
             <p className="text-xs font-black uppercase tracking-[0.24em] text-emerald-300">Browser-only arcade</p>
             <h1 className="mt-2 text-4xl font-black tracking-[-0.06em] md:text-6xl">DefinitelyNotPong</h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300 md:text-base">
-              A Hostinger-safe paddle duel: local single-player plus short-polled multiplayer rooms, no WebSockets and no custom runtime.
+              A Hostinger-safe paddle duel: local single-player plus smoothly predicted multiplayer rooms, no WebSockets and no custom runtime.
             </p>
           </div>
           <div className="mt-5 grid grid-cols-2 gap-3 text-center md:mt-0">

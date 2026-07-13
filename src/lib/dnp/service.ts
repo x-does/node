@@ -23,6 +23,9 @@ export type DnpDataAdapter = {
   updateRoom(id: string, data: Partial<DnpStoredRoom>, expectedVersion?: number): Promise<DnpStoredRoom>;
   createPlayer(data: Omit<DnpStoredPlayer, 'createdAt'>): Promise<DnpStoredPlayer>;
   updatePlayer(id: string, data: Partial<DnpStoredPlayer>): Promise<DnpStoredPlayer>;
+  refreshPlayerIfActive(id: string, name: string, lastSeenAt: Date, expectedTokenHash: string, allowTimedOut?: boolean): Promise<DnpStoredPlayer | null>;
+  updatePlayerInputIfNewer(id: string, position: number, seq: number, lastSeenAt: Date): Promise<DnpStoredPlayer | null>;
+  expirePlayerIfLastSeenBefore(id: string, cutoff: Date, leftAt: Date): Promise<DnpStoredPlayer | null>;
 };
 
 export class DnpServiceError extends Error {
@@ -35,6 +38,10 @@ const now = () => new Date();
 const activePlayers = (players: DnpStoredPlayer[]) => players.filter((player) => !player.leftAt).sort((a, b) => a.joinOrder - b.joinOrder);
 const STALE_MS = 120_000;
 const WRITE_RETRIES = 4;
+const HEARTBEAT_INTERVAL_MS = 10_000;
+const SIMULATION_CHECKPOINT_MS = 500;
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function requireName(name: unknown) {
   const normalized = normalizeDnpName(name);
@@ -59,6 +66,10 @@ function findPlayerByToken(players: DnpStoredPlayer[], token: unknown) {
   return players.find((entry) => !entry.leftAt && verifyDnpToken(token, entry.tokenHash));
 }
 
+function findTokenOwner(players: DnpStoredPlayer[], token: unknown) {
+  return players.find((entry) => verifyDnpToken(token, entry.tokenHash));
+}
+
 function assertAdmin(room: DnpStoredRoom, players: DnpStoredPlayer[], token: unknown) {
   const admin = players.find((player) => player.id === room.adminPlayerId && !player.leftAt);
   return assertToken(admin, token);
@@ -71,8 +82,9 @@ async function withWriteRetry<T>(operation: () => Promise<T>) {
       return await operation();
     } catch (error) {
       lastError = error;
-      if (error instanceof DnpServiceError && error.status !== 409) throw error;
+      if (!(error instanceof DnpServiceError) || error.status !== 409) throw error;
       if (attempt === WRITE_RETRIES - 1) throw error;
+      await sleep(10 * (attempt + 1) + Math.floor(Math.random() * 15));
     }
   }
   throw lastError;
@@ -85,29 +97,35 @@ async function transferAdminIfNeeded(adapter: DnpDataAdapter, room: DnpStoredRoo
   return adapter.updateRoom(room.id, { adminPlayerId, version: room.version + 1 }, room.version);
 }
 
-async function advanceRoomIfNeeded(adapter: DnpDataAdapter, room: DnpStoredRoom, players: DnpStoredPlayer[], at = now()) {
+function projectRoom(room: DnpStoredRoom, players: DnpStoredPlayer[], at: Date) {
   const elapsed = at.getTime() - room.lastTickAt.getTime();
-  if (room.status !== 'playing' || elapsed <= 0) return room;
-  const advanced = advanceDnpSimulation(toDnpPublicRoom(room, players), elapsed);
-  const changed = advanced.scores.left !== room.scoreLeft || advanced.scores.right !== room.scoreRight || advanced.ball.x !== room.ballX || advanced.ball.y !== room.ballY || advanced.ball.vx !== room.ballVx || advanced.ball.vy !== room.ballVy;
-  return adapter.updateRoom(room.id, {
-    scoreLeft: advanced.scores.left,
-    scoreRight: advanced.scores.right,
-    ballX: advanced.ball.x,
-    ballY: advanced.ball.y,
-    ballVx: advanced.ball.vx,
-    ballVy: advanced.ball.vy,
+  return elapsed > 0 ? advanceDnpSimulation(toDnpPublicRoom(room, players), elapsed) : toDnpPublicRoom(room, players);
+}
+
+async function checkpointRoomIfNeeded(adapter: DnpDataAdapter, room: DnpStoredRoom, players: DnpStoredPlayer[], at = now()) {
+  const elapsed = at.getTime() - room.lastTickAt.getTime();
+  const projected = projectRoom(room, players, at);
+  if (room.status !== 'playing' || elapsed < SIMULATION_CHECKPOINT_MS) return { room, projected };
+  const updated = await adapter.updateRoom(room.id, {
+    scoreLeft: projected.scores.left,
+    scoreRight: projected.scores.right,
+    ballX: projected.ball.x,
+    ballY: projected.ball.y,
+    ballVx: projected.ball.vx,
+    ballVy: projected.ball.vy,
     lastTickAt: at,
-    version: changed ? room.version + 1 : room.version,
+    version: room.version + 1,
   }, room.version);
+  return { room: updated, projected: toDnpPublicRoom(updated, players) };
 }
 
 async function expireStalePlayers(adapter: DnpDataAdapter, players: DnpStoredPlayer[], at = now()) {
   let next = players;
+  const cutoff = new Date(at.getTime() - STALE_MS);
   for (const player of players) {
-    if (!player.leftAt && at.getTime() - player.lastSeenAt.getTime() > STALE_MS) {
-      const updated = await adapter.updatePlayer(player.id, { leftAt: at });
-      next = next.map((entry) => (entry.id === updated.id ? updated : entry));
+    if (!player.leftAt && player.lastSeenAt <= cutoff) {
+      const updated = await adapter.expirePlayerIfLastSeenBefore(player.id, cutoff, at);
+      if (updated) next = next.map((entry) => (entry.id === updated.id ? updated : entry));
     }
   }
   return next;
@@ -190,15 +208,24 @@ export class DnpRoomService {
     return withWriteRetry(() => this.adapter.transaction(async (tx) => {
       const found = await tx.findRoomByCode(code);
       if (!found) throw new DnpServiceError(404, 'Room not found.');
-      let players = await expireStalePlayers(tx, found.players);
-      let room = await transferAdminIfNeeded(tx, found, players);
-      const reconnect = findPlayerByToken(players, tokenValue);
-      if (reconnect) {
-        const player = await tx.updatePlayer(reconnect.id, { name, lastSeenAt: now(), leftAt: null });
+      let players = found.players;
+      const tokenOwner = findTokenOwner(players, tokenValue);
+      if (tokenOwner) {
+        // A matching token on a left row denotes timeout expiry: explicit leave/kick
+        // rotate the hash. Re-check the hash during reactivation so a concurrent
+        // explicit invalidation cannot be undone by this reconnect.
+        const player = await tx.refreshPlayerIfActive(tokenOwner.id, name, now(), tokenOwner.tokenHash, true);
+        if (!player) throw new DnpServiceError(403, 'Invalid player token.');
         players = players.map((entry) => (entry.id === player.id ? player : entry));
-        room = await transferAdminIfNeeded(tx, room, players);
+        players = await expireStalePlayers(tx, players);
+        const room = await transferAdminIfNeeded(tx, found, players);
         return { room: toDnpPublicRoom(room, players), playerId: player.id, token: tokenValue as string };
       }
+      if (tokenValue !== undefined && tokenValue !== null && tokenValue !== '') {
+        throw new DnpServiceError(403, 'Invalid player token.');
+      }
+      players = await expireStalePlayers(tx, players);
+      let room = await transferAdminIfNeeded(tx, found, players);
       if (room.mode === 'matchmaking' || room.status !== 'lobby') throw new DnpServiceError(409, 'Room is not accepting new players.');
       if (activePlayers(players).length >= DNP_MAX_PLAYERS) throw new DnpServiceError(409, 'Room is full.');
       const token = generateDnpToken();
@@ -219,11 +246,15 @@ export class DnpRoomService {
       if (!found) throw new DnpServiceError(404, 'Room not found.');
       let players = await expireStalePlayers(tx, found.players);
       const tokenPlayer = assertToken(findPlayerByToken(players, tokenValue), tokenValue);
-      const updated = await tx.updatePlayer(tokenPlayer.id, { lastSeenAt: now() });
-      players = players.map((entry) => (entry.id === updated.id ? updated : entry));
+      const at = now();
+      if (at.getTime() - tokenPlayer.lastSeenAt.getTime() >= HEARTBEAT_INTERVAL_MS) {
+        const updated = await tx.updatePlayer(tokenPlayer.id, { lastSeenAt: at });
+        players = players.map((entry) => (entry.id === updated.id ? updated : entry));
+      }
       let room = await transferAdminIfNeeded(tx, found, players);
-      room = await advanceRoomIfNeeded(tx, room, players);
-      return { room: toDnpPublicRoom(room, players) };
+      const checkpoint = await checkpointRoomIfNeeded(tx, room, players, at);
+      room = checkpoint.room;
+      return { room: checkpoint.projected };
     }));
   }
 
@@ -237,11 +268,9 @@ export class DnpRoomService {
       let players = await expireStalePlayers(tx, found.players);
       let room = await transferAdminIfNeeded(tx, found, players);
       const player = assertToken(findPlayerByToken(players, tokenValue), tokenValue);
-      room = await advanceRoomIfNeeded(tx, room, players);
       if (seqValue > player.inputSeq) {
-        const updated = await tx.updatePlayer(player.id, { inputPosition: position, inputSeq: seqValue, lastSeenAt: now() });
-        players = players.map((entry) => (entry.id === updated.id ? updated : entry));
-        room = await tx.updateRoom(room.id, { version: room.version + 1 }, room.version);
+        const updated = await tx.updatePlayerInputIfNewer(player.id, position, seqValue, now());
+        if (updated) players = players.map((entry) => (entry.id === updated.id ? updated : entry));
       }
       return { ok: true, room: toDnpPublicRoom(room, players) };
     }));
@@ -256,7 +285,11 @@ export class DnpRoomService {
       let players = await expireStalePlayers(tx, found.players);
       let room = await transferAdminIfNeeded(tx, found, players);
       const player = assertToken(findPlayerByToken(players, tokenValue), tokenValue);
-      const left = await tx.updatePlayer(player.id, { leftAt: now(), lastSeenAt: now() });
+      const left = await tx.updatePlayer(player.id, {
+        leftAt: now(),
+        lastSeenAt: now(),
+        tokenHash: hashDnpToken(generateDnpToken()),
+      });
       players = players.map((entry) => (entry.id === left.id ? left : entry));
       room = await transferAdminIfNeeded(tx, room, players);
       return { room: toDnpPublicRoom(room, players) };
@@ -283,7 +316,10 @@ export class DnpRoomService {
         if (targetId === room.adminPlayerId) throw new DnpServiceError(400, 'Cannot kick admin.');
         const target = players.find((player) => player.id === targetId && !player.leftAt);
         if (!target) throw new DnpServiceError(404, 'Player not found.');
-        const kicked = await tx.updatePlayer(target.id, { leftAt: now() });
+        const kicked = await tx.updatePlayer(target.id, {
+          leftAt: now(),
+          tokenHash: hashDnpToken(generateDnpToken()),
+        });
         players = players.map((entry) => (entry.id === kicked.id ? kicked : entry));
         room = await tx.updateRoom(room.id, { version: room.version + 1 }, room.version);
       } else if (action === 'transfer') {
