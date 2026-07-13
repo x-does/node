@@ -12,7 +12,6 @@ const noCacheHeaders = [
 const nextConfig: NextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
-  output: 'standalone',
   async headers() {
     return [
       { source: '/', headers: noCacheHeaders },
@@ -21,8 +20,6 @@ const nextConfig: NextConfig = {
       { source: '/blog-edit', headers: noCacheHeaders },
       { source: '/blog-editor', headers: noCacheHeaders },
       { source: '/interactive-apps', headers: noCacheHeaders },
-      { source: '/dnp', headers: noCacheHeaders },
-      { source: '/dnp/:path*', headers: noCacheHeaders },
       { source: '/sponsors', headers: noCacheHeaders },
       { source: '/xd-license', headers: noCacheHeaders },
       { source: '/main', headers: noCacheHeaders },
