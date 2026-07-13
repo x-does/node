@@ -9,6 +9,13 @@ export type CatalogueItem = {
 
 export const catalogueItems: CatalogueItem[] = [
   {
+    title: 'DefinitelyNotPong',
+    href: '/dnp',
+    description: 'Browser-only canvas paddle game against a quick AI opponent with keyboard, touch, pause, and restart controls.',
+    status: 'live',
+    tags: ['game', 'canvas', 'arcade', 'paddle', 'browser'],
+  },
+  {
     title: 'Blog editor',
     href: '/blog-edit',
     description: 'Write, edit, preview, and publish XDOES posts into the GitHub-backed blog index.',
