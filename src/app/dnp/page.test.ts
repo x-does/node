@@ -14,12 +14,15 @@ test('interactive catalogue exposes DefinitelyNotPong as a live local /dnp app',
   assert.match(item.description, /browser/i);
 });
 
-test('dnp route source is browser-only and does not declare a custom runtime', async () => {
+test('dnp route source is Hostinger-safe and exposes join page without custom runtime', async () => {
   const page = await import('./page');
+  const joinPage = await import('./join/[code]/page');
   const game = await import('./DnpGame');
 
   assert.equal(typeof page.default, 'function');
+  assert.equal(typeof joinPage.default, 'function');
   assert.equal(typeof game.default, 'function');
   assert.equal('runtime' in page, false);
+  assert.equal('runtime' in joinPage, false);
   assert.equal('dynamic' in page, false);
 });

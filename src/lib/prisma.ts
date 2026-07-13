@@ -11,11 +11,14 @@ function buildDatabaseUrlFromLegacyEnv() {
     return null;
   }
 
-  const encodedUser = encodeURIComponent(user);
-  const encodedPassword = encodeURIComponent(password);
-  const encodedName = encodeURIComponent(name);
+  const databaseUrl = new URL('mysql://localhost');
+  databaseUrl.username = user;
+  databaseUrl.password = password;
+  databaseUrl.hostname = host;
+  databaseUrl.port = port;
+  databaseUrl.pathname = `/${name}`;
 
-  return `mysql://${encodedUser}:${encodedPassword}@${host}:${port}/${encodedName}`;
+  return databaseUrl.toString();
 }
 
 if (!process.env.DATABASE_URL) {

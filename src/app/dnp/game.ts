@@ -31,6 +31,9 @@ export type DnpGameState = {
 export type DnpInputState = {
   up: boolean;
   down: boolean;
+  left: boolean;
+  right: boolean;
+  pointerX: number | null;
   pointerY: number | null;
 };
 

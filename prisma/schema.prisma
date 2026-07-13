@@ -79,3 +79,45 @@ model TrackingEvent {
   @@index([category, createdAt])
   @@map("openclaw_tracking_events")
 }
+
+model DnpRoom {
+  id            String      @id @db.VarChar(36)
+  code          String      @unique @db.VarChar(6)
+  mode          String      @db.VarChar(20)
+  status        String      @default("lobby") @db.VarChar(20)
+  adminPlayerId String?     @map("admin_player_id") @db.VarChar(36)
+  scoreLeft     Int         @default(0) @map("score_left")
+  scoreRight    Int         @default(0) @map("score_right")
+  ballX         Float       @default(0.5) @map("ball_x")
+  ballY         Float       @default(0.5) @map("ball_y")
+  ballVx        Float       @default(0.42) @map("ball_vx")
+  ballVy        Float       @default(0.17) @map("ball_vy")
+  version       Int         @default(1)
+  lastTickAt    DateTime    @default(now()) @map("last_tick_at")
+  createdAt     DateTime    @default(now()) @map("created_at")
+  updatedAt     DateTime    @updatedAt @map("updated_at")
+  players       DnpPlayer[]
+
+  @@index([status, updatedAt])
+  @@map("openclaw_dnp_rooms")
+}
+
+model DnpPlayer {
+  id            String    @id @db.VarChar(36)
+  roomId        String    @map("room_id") @db.VarChar(36)
+  name          String    @db.VarChar(16)
+  joinOrder     Int       @map("join_order")
+  slotIndex     Int       @map("slot_index")
+  tokenHash     String    @map("token_hash") @db.VarChar(64)
+  inputPosition Float     @default(0.5) @map("input_position")
+  inputSeq      Int       @default(0) @map("input_seq")
+  lastSeenAt    DateTime  @default(now()) @map("last_seen_at")
+  leftAt        DateTime? @map("left_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  room          DnpRoom   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, joinOrder])
+  @@unique([roomId, tokenHash])
+  @@index([roomId, leftAt])
+  @@map("openclaw_dnp_players")
+}

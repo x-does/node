@@ -11,6 +11,8 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
+    "test": "node --import tsx --test src/lib/dnp/*.test.ts src/app/api/dnp/*.test.ts src/app/dnp/*.test.ts",
+    "typecheck": "tsc --noEmit",
     "deploy:preflight": "bash scripts/deploy-preflight.sh",
     "deploy:preflight:check": "bash scripts/deploy-preflight.sh --check-only",
     "verify:live": "bash scripts/verify-live-audit-surface.sh",

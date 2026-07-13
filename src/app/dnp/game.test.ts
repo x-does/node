@@ -17,7 +17,7 @@ test('getResponsiveArenaSize keeps a 5:3 arena inside mobile and desktop bounds'
 
 test('movePlayerPaddle supports keyboard direction and clamps to the arena', () => {
   const state = createInitialDnpState(800, 480);
-  const input: DnpInputState = { up: true, down: false, pointerY: null };
+  const input: DnpInputState = { up: true, down: false, left: false, right: false, pointerX: null, pointerY: null };
 
   const moved = movePlayerPaddle(state, input, 1);
   assert.ok(moved.player.y < state.player.y);
@@ -25,7 +25,7 @@ test('movePlayerPaddle supports keyboard direction and clamps to the arena', () 
   const clampedTop = movePlayerPaddle({ ...state, player: { ...state.player, y: 4 } }, input, 1);
   assert.equal(clampedTop.player.y, 0);
 
-  const pointerMoved = movePlayerPaddle(state, { up: false, down: false, pointerY: 300 }, 0.016);
+  const pointerMoved = movePlayerPaddle(state, { up: false, down: false, left: false, right: false, pointerX: null, pointerY: 300 }, 0.016);
   assert.equal(pointerMoved.player.y, 300 - state.player.height / 2);
 });
 
@@ -45,7 +45,7 @@ test('stepDnpGame bounces the ball off the player paddle and speeds up rallies',
       player: { ...state.player, y: 180 },
       ball: { ...state.ball, x: 41, y: 230, vx: -360, vy: 0, radius: 8, speed: 360 },
     },
-    { up: false, down: false, pointerY: null },
+    { up: false, down: false, left: false, right: false, pointerX: null, pointerY: null },
     0.016,
   );
 
@@ -62,7 +62,7 @@ test('stepDnpGame scores, resets the ball, and pauses after a point', () => {
       paused: false,
       ball: { ...state.ball, x: -10, y: 200, vx: -360, vy: 0 },
     },
-    { up: false, down: false, pointerY: null },
+    { up: false, down: false, left: false, right: false, pointerX: null, pointerY: null },
     0.016,
   );
 
